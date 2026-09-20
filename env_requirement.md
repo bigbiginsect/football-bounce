@@ -1,38 +1,34 @@
 # 环境待补齐清单
 
-探查日期：2026-09-20。已检查项目目录、PATH、相关环境变量、常用安装目录、卸载注册表及 `D:\cocos`。未做全盘扫描，也未启动编辑器执行构建；以下“未发现”不代表软件绝对未安装。
+更新日期：2026-09-20。按用户要求，本机只配置游戏开发环境，日常测试使用浏览器或模拟环境；Android 打包预计在其他机器完成。
 
 ## 已具备
 
-- Windows / PowerShell / Git 可用。
-- Creator 可执行文件位于 `D:\cocos\editor\Creator\3.8.8\CocosCreator.exe`，产品版本为 `3.8.8`；Dashboard 存在。
-- 仓库尚未初始化 Creator 工程，没有游戏资源、源码、依赖清单或测试脚本。
+| 项目 | 实际状态 |
+| --- | --- |
+| Windows / PowerShell / Git | 原有工具可用 |
+| Creator | 保留现有 3.8.8，未改动引擎安装目录 |
+| Node.js / npm | 官方 Windows x64 ZIP 安装 Node.js 22.23.2 / npm 10.9.8，SHA-256 校验通过，用户 PATH 已配置 |
+| 独立检查与测试基础 | 临时安装固定版本 TypeScript 5.9.3 成功；严格类型检查、Node 内置测试均通过；未在未初始化工程中添加 package.json |
+| 浏览器 | Edge 153.0.4234.32 已存在；场景及 WebGL 实测尚待完成 |
 
-## 待完成与验证
+安装路径、验证命令、失败尝试与限制见 [施工记录](worklogs/2026-09-20-dev-environment/b1.md)。已打开的终端或 Codex 可能持有旧 PATH，重启宿主应用后使用 `node --version`、`npm.cmd --version`。没有修改 PowerShell 执行策略。
 
-| 状态 | 项目 | 补齐方式与完成证据 |
-| --- | --- | --- |
-| 待完成 | 2D 工程初始化 | 后续工程初始化任务中用 Creator 3.8.8 在仓库根目录创建 2D 工程；完成资源导入、启动场景预览，记录结果 |
-| 未发现可用命令 | Node.js / npm | 为独立 TypeScript 检查与核心测试提供工具链；选定兼容版本后记录 `node --version`、`npm --version` 并锁定依赖。编辑器内置运行时不等于终端已有 Node，也不是编辑器预览的前置缺口 |
-| 未发现可用命令 | JDK | 配置 JDK 17、`JAVA_HOME` 和 PATH；新终端中验证 `java -version`、`javac -version`，确认 Gradle 实际使用的 JDK |
-| 未核实 | Android 构建工具 | 安装或定位 Android Studio（选择支持 AGP 8.10 的版本）及 SDK Platform 36、Build-Tools 36.0.0、Platform-Tools、NDK、CMake；核实实际版本和路径，在 Creator 原生开发环境中配置 SDK/NDK |
-| 未验证 | 下载与构建 | 确认 SDK、Gradle、Google Maven / Maven Central 依赖可获取；使用生成工程自带的 Gradle Wrapper，完成首个 Android debug APK 构建，无需先安装全局 Gradle |
-| 未核实 | 真机测试条件 | 准备可安装 APK 的 Android 手机；调试时开启 USB 调试并授权，验证 `adb devices` 与安装启动。最终需两台手机及互通的局域网，记录设备与系统 |
+## 后续工程初始化时完成
 
-当前环境中未见 `JAVA_HOME`、`ANDROID_SDK_ROOT`、`NDK_ROOT` 等相关变量；默认 `%LOCALAPPDATA%\Android` 目录未发现。自定义路径如已安装，优先定位和复用，无需重复安装。环境变量为空本身不能证明 SDK 不存在。
+- 用 Creator 3.8.8 的 2D 模板在仓库根目录初始化，保留现有 Git 与文档。
+- 完成资源导入和启动场景浏览器预览，验证 WebGL、输入及实际物理运行。
+- 根据实际工程配置 TypeScript 检查与核心测试，锁定依赖并提交锁文件。目前没有项目级 `npm test` 或类型检查命令。
+- 本次 Edge 无界面探针未返回页面结果，输出 VBS enclave 错误 577；浏览器自动化连接也未提供 Edge。不能据此认定正常交互式浏览器不可用，也不能记为浏览器验证通过。
 
-## 构建版本依据
+## Android 相关：延期，不阻塞本机开发
 
-本机模板目录：`D:\cocos\editor\Creator\3.8.8\resources\resources\3d\engine\templates\android\`。
+JDK、Android Studio、SDK、NDK、CMake、Gradle 依赖下载、adb、Android 模拟器、APK 构建与真机验证，本次均不安装、不验收。转到实际打包机器后再核对 Creator 3.8.8 生成工程要求；不把此前模板默认版本当作已通过构建的配置。
 
-- `build/build.gradle`：Android Gradle Plugin **8.10.1**。
-- `build/gradle/wrapper/gradle-wrapper.properties`：Gradle **8.11.1**。
-- `build/gradle.properties`：compile/target SDK **36**、Build-Tools **36.0.0**、min SDK **21**、默认 ABI **arm64-v8a**；NDK 版本留空。这些是安装模板默认值，并非项目已经完成的配置或已验证兼容范围。
-- [Android AGP 8.10 官方兼容表](https://developer.android.com/build/releases/agp-8-10-0-release-notes)确认 Gradle 8.11.1、JDK 17 及最高 API 36 的兼容要求。
-- [Cocos 3.8 原生环境说明](https://docs.cocos.com/creator/3.8/manual/zh/editor/publish/setup-native-development.html)提供 SDK/NDK 配置流程，但其 Android Studio / NDK 推荐覆盖整个 3.8 系列，不能直接替代本机 3.8.8 模板验证。
-
-NDK、CMake 的确切版本在首次构建时结合 3.8.8 实际生成工程和引擎要求确定，成功后固定。不要仅按 AGP 的默认 NDK 推断 Cocos 已兼容，也不要自动升级或降级整套构建工具。工程生成后重新核对上述版本。
+最终 APK 与同局域网双 Android 手机联机验收仍保留，浏览器/模拟测试用于开发阶段，不能直接证明原生最终交付通过。
 
 ## 关闭规则
 
-每补齐一项，将实际路径、版本、验证命令/操作及结果写入对应需求的施工文档，并更新 `AGENTS.md` 的环境部分。所有项目完成验证后删除本文件；不因“已安装”就标记“构建/真机验证通过”。环境文件只承载工具与设备缺口，玩法与服务器方案待定项保留在需求日志中。
+本机下载/安装缺口已补齐；工程初始化和实际预览验证仍保留待办，因此保留本文件。后续开发环境验证完成后，将 Android 延期事项迁移到实际打包需求日志，再删除本清单。
+
+用户补充确认（2026-09-20）：本机 Edge 正常可用。本次失败属于代理自动化验证未完成，不列为浏览器环境缺口，无需修复或重装 Edge；后续仅需随工程初始化验收实际游戏场景。

@@ -33,8 +33,11 @@
 | Git | `2.51.1.windows.1`，位于 `D:\Git\cmd\git.exe` |
 | Creator | `D:\cocos\editor\Creator\3.8.8\CocosCreator.exe`，可执行文件产品版本确认为 `3.8.8` |
 | Dashboard | `D:\cocos\CocosDashboard\CocosDashboard.exe` 存在 |
-| 工具链缺口 | 当前 PATH 未找到 `node`、`npm`、`java`、`adb`；Android SDK/NDK、JDK、Android Studio 尚未核实可用 |
+| Node.js / npm | 已安装 Node.js `22.23.2` / npm `10.9.8`，用户目录 `%LOCALAPPDATA%\Programs\NodeJS\node-v22.23.2-win-x64` 已加入用户 PATH；重启终端/宿主应用后生效 |
+| 浏览器 | Edge `153.0.4234.32` 已存在；实际 Creator 场景预览待工程初始化后验证 |
+| Android 工具链 | 2026-09-20 用户明确延期，本机不补齐 JDK、SDK/NDK、Gradle、adb 或 Android 模拟器 |
 
+- 本机日常开发验证使用 Creator 浏览器预览及纯逻辑/模拟测试；Android 打包预计在其他机器完成，当前不作为本机开发前置条件。最终 APK 与双机联机交付标准保留。Node/npm 与临时 TypeScript 检查已验证，证据见 [环境施工记录](worklogs/2026-09-20-dev-environment/b1.md)。
 - 环境补齐事项见根目录 `env_requirement.md`（如存在）。不能将“未找到”写成“全机未安装”；不能将安装包/目录存在写成构建已通过。
 - 后续初始化时，用 **3.8.8 的 2D 模板**在本仓库根目录创建/导入工程，保留现有 Git 与文档，不额外嵌套一层同名工程。不手工伪造 Creator 项目或资源 UUID。
 - 初始化后用 Creator 打开项目，等待导入完成并预览启动场景。Android 构建通过编辑器配置并验证后，才固化对应命令行参数与输出路径。
