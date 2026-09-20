@@ -1,0 +1,17 @@
+{
+  "name": "tantanle",
+  "private": true,
+  "scripts": {
+    "typecheck": "tsc --project tsconfig.json --noEmit",
+    "typecheck:core": "tsc --project tsconfig.core.json --noEmit",
+    "test": "tsc --project tsconfig.core.json && node --test tests/*.test.cjs",
+    "check": "npm run typecheck && npm test"
+  },
+  "uuid": "87b7e6e3-5d3a-44b2-acb1-eca3ede27472",
+  "creator": {
+    "version": "3.8.8"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3"
+  }
+}

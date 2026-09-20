@@ -28,20 +28,20 @@
 
 | 项目 | 已核实状态 |
 | --- | --- |
-| 工作目录 | `D:\tantanle`；初始仓库只有 `README.md`，尚无 Creator 工程、依赖或测试脚本 |
+| 工作目录 | `D:\tantanle`；已导入 Creator 3.8.8 正式 Empty(2D) 工程，启动场景 `assets/scenes/Boot.scene`，分层脚本与项目测试已建立 |
 | 系统与终端 | Windows，系统版本 `10.0.22631`；PowerShell `7.6.6` |
 | Git | `2.51.1.windows.1`，位于 `D:\Git\cmd\git.exe` |
 | Creator | `D:\cocos\editor\Creator\3.8.8\CocosCreator.exe`，可执行文件产品版本确认为 `3.8.8` |
 | Dashboard | `D:\cocos\CocosDashboard\CocosDashboard.exe` 存在 |
 | Node.js / npm | 已安装 Node.js `22.23.2` / npm `10.9.8`，用户目录 `%LOCALAPPDATA%\Programs\NodeJS\node-v22.23.2-win-x64` 已加入用户 PATH；重启终端/宿主应用后生效 |
-| 浏览器 | Edge `153.0.4234.32` 已存在；实际 Creator 场景预览待工程初始化后验证 |
+| 运行预览 | Creator 3.8.8 编辑器内运行预览已实测通过（含停止后再次运行）；Edge 153.0.4234.32 保留为可选调试工具 |
 | Android 工具链 | 2026-09-20 用户明确延期，本机不补齐 JDK、SDK/NDK、Gradle、adb 或 Android 模拟器 |
 
-- 本机日常开发验证使用 Creator 浏览器预览及纯逻辑/模拟测试；Android 打包预计在其他机器完成，当前不作为本机开发前置条件。最终 APK 与双机联机交付标准保留。Node/npm 与临时 TypeScript 检查已验证，证据见 [环境施工记录](worklogs/2026-09-20-dev-environment/b1.md)。
-- 环境补齐事项见根目录 `env_requirement.md`（如存在）。不能将“未找到”写成“全机未安装”；不能将安装包/目录存在写成构建已通过。
-- 后续初始化时，用 **3.8.8 的 2D 模板**在本仓库根目录创建/导入工程，保留现有 Git 与文档，不额外嵌套一层同名工程。不手工伪造 Creator 项目或资源 UUID。
-- 初始化后用 Creator 打开项目，等待导入完成并预览启动场景。Android 构建通过编辑器配置并验证后，才固化对应命令行参数与输出路径。
-- 当前没有可运行的 `npm test`、类型检查或 APK 构建命令，禁止虚构已存在的命令。引入工具时锁定版本、提交锁文件，将真实运行方法补入本节或链接至仓库内说明。
+- 本机日常开发验证使用 Creator 编辑器内运行预览及纯逻辑/模拟测试，外部浏览器为可选方式；Android 打包预计在其他机器完成，当前不作为本机开发前置条件。最终 APK 与双机联机交付标准保留。工具安装见 [环境施工记录](worklogs/2026-09-20-dev-environment/b1.md)，工程、类型检查及 18 项核心测试证据见 [阶段 0 施工记录](worklogs/2026-09-20-stage0-foundation/b1.md)。
+- 阶段 0 本机环境验收已关闭，临时 `env_requirement.md` 已删除；Android 延期事项继续由 ROADMAP 支线跟踪。后续环境补齐事项见根目录 `env_requirement.md`（如存在）。不能将“未找到”写成“全机未安装”；不能将安装包/目录存在写成构建已通过。
+- 工程已从 **3.8.8 的正式 2D 模板**导入本仓库根目录，保留原有 Git 与文档；Dashboard 遇到已有目录自动创建的 `D:\tantanle_1` 仅为本次模板来源，不是开发目录。项目和资源 UUID 来自编辑器，不手工伪造。
+- 用 Creator 3.8.8 打开仓库根目录，等待导入完成，打开 `assets/scenes/Boot.scene` 后预览。当前工程重新打开、启动场景实际运行及重复启动已通过验收，见 [阶段 0 复验记录](worklogs/2026-09-20-stage0-foundation/b2.md)。普通场景编辑视图不能代替运行验证。Android 构建通过编辑器配置并验证后，才固化对应命令行参数与输出路径。
+- 项目依赖锁定 TypeScript **5.9.3**，使用 Node 内置测试，无额外测试框架。根目录运行 `npm.cmd ci --ignore-scripts --no-audit --no-fund`、`npm.cmd run typecheck`、`npm.cmd test`；`npm.cmd run check` 合并后两项。完整检查需 Creator 生成的声明，核心测试可脱离 Creator 运行。详见 [开发与验证](docs/development.md)。当前没有已验证的 APK 构建命令。
 - 日常检查：`git status --short`、`git diff --check`。PowerShell 启动编辑器可用：`& 'D:\cocos\editor\Creator\3.8.8\CocosCreator.exe'`，再从编辑器打开工程。
 - 先复用已有工具；需要新依赖时说明用途。不要擅自升级引擎或改动引擎安装目录；本机绝对路径不写进共享构建配置。
 

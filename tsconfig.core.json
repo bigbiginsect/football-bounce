@@ -1,0 +1,15 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "CommonJS",
+    "moduleResolution": "node",
+    "strict": true,
+    "noEmitOnError": true,
+    "forceConsistentCasingInFileNames": true,
+    "rootDir": "assets/scripts",
+    "outDir": ".test-output",
+    "types": [],
+    "lib": ["ES2020"]
+  },
+  "include": ["assets/scripts/core/**/*.ts", "assets/scripts/application/**/*.ts"]
+}
