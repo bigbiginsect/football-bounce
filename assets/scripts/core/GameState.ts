@@ -1,4 +1,4 @@
-/** 仅存 JSON 数据；坐标/速度的物理单位由阶段 1 适配层确定。 */
+/** 仅存 JSON 数据；坐标为米、速度为米/秒，球场中心为原点，右/上为正。 */
 export interface Vector2Data { readonly x: number; readonly y: number }
 export interface BodyState {
     readonly position: Vector2Data;
