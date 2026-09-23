@@ -32,6 +32,7 @@ function load(relative) {
 }
 const { Boot } = load('assets/scripts/presentation/Boot.ts');
 const { PrototypeView } = load('assets/scripts/presentation/PrototypeView.ts');
+const { LineupView } = load('assets/scripts/presentation/LineupView.ts');
 const { CocosPhysics } = load('assets/scripts/adapters/physics/CocosPhysics.ts');
 const { LocalMatch } = load('assets/scripts/application/LocalMatch.ts');
 const { LaunchGesture } = load('assets/scripts/core/LaunchGesture.ts');
@@ -41,6 +42,60 @@ const { parsePlayerCatalog, playerGameplayValues, getPlayerTemplate } =
   load('assets/scripts/core/PlayerCatalog.ts');
 const config = freezeConfig(prototypeConfig);
 const catalog = parsePlayerCatalog(require('../assets/resources/config/players.json'));
+function lineupGestureFixture() {
+  const view = Object.create(LineupView.prototype);
+  view.snapshot = { side: 'blue', blue: ['van-dijk', 'cristiano-ronaldo', 'de-bruyne', 'messi', 'mbappe'],
+    red: [], bench: ['haaland'] };
+  view.root = { children: [] };
+  view.scrollOffset = 0;
+  view.benchCards = [{ position: { x: -234, y: 0 }, setPosition(x, y) { this.position = { x, y }; } }];
+  view.targetRing = { clear() {}, roundRect() {}, stroke() {} };
+  view.local = point => point;
+  view.playerCard = () => ({ setPosition() {}, setSiblingIndex() {}, destroy() {} });
+  const edits = []; view.submit = edit => edits.push(edit);
+  return { view, edits };
+}
+test('仓库向球场拖入提交替换，空白落点与第二触点不提交', () => {
+  const { view, edits } = lineupGestureFixture();
+  view.touchStart(1, { x: -234, y: -423 });
+  view.touchStart(2, { x: -234, y: -423 });
+  view.touchMove(2, { x: -132, y: -15 });
+  view.touchEnd(2, { x: -132, y: -15 });
+  assert.equal(edits.length, 0);
+  view.touchMove(1, { x: -132, y: -15 });
+  view.touchEnd(1, { x: -132, y: -15 });
+  assert.deepEqual(JSON.parse(JSON.stringify(edits)), [{ type: 'ReplaceFromBench', templateId: 'haaland', slot: 0 }]);
+  view.touchStart(1, { x: -234, y: -423 });
+  view.touchMove(1, { x: 300, y: 350 });
+  view.touchEnd(1, { x: 300, y: 350 });
+  assert.equal(edits.length, 1);
+});
+test('场上拖动互换，取消触摸不会改阵容', () => {
+  const { view, edits } = lineupGestureFixture();
+  view.touchStart(1, { x: -132, y: -15 });
+  view.touchMove(1, { x: 132, y: -15 });
+  view.touchCancel(1);
+  view.touchEnd(1, { x: 132, y: -15 });
+  assert.equal(edits.length, 0);
+  view.touchStart(1, { x: -132, y: -15 });
+  view.touchMove(1, { x: 132, y: -15 });
+  view.touchEnd(1, { x: 132, y: -15 });
+  assert.deepEqual(JSON.parse(JSON.stringify(edits)), [{ type: 'SwapSlots', from: 0, to: 1 }]);
+});
+test('仓库球员增加后可横向滚动，滑动不触发替换', () => {
+  const { view, edits } = lineupGestureFixture();
+  view.snapshot.bench = ['p0', 'p1', 'p2', 'p3', 'p4', 'p5', 'p6'];
+  view.benchCards = view.snapshot.bench.map((_, i) => ({
+    position: { x: -234 + i * 154, y: 0 },
+    setPosition(x, y) { this.position = { x, y }; },
+  }));
+  view.touchStart(1, { x: -234, y: -423 });
+  view.touchMove(1, { x: -300, y: -424 });
+  view.touchMove(1, { x: -300, y: -424 });
+  view.touchEnd(1, { x: -300, y: -424 });
+  assert.ok(view.scrollOffset > 0);
+  assert.equal(edits.length, 0);
+});
 function setup() {
   const boot = new Boot(); boot.config = config; boot.gesture = new LaunchGesture(config);
   const physics = { restore(state) { this.state = state; }, launch() {}, step() {}, stop() {},
@@ -101,6 +156,8 @@ function viewFixture() {
     moveTo(x, y) { ballPaths.push([x, y]); }, lineTo(x, y) { ballPaths.push([x, y]); },
     fill() { ballFills.push(this.fillColor); }, stroke() {} };
   screen.status = {}; screen.info = {};
+  screen.editButton = { active: false };
+  screen.restartButton = { setPosition() {} };
   const circles = [];
   screen.powerCircle = { clear() { circles.length = 0; }, circle(x, y, radius) { circles.push({ x, y, radius }); }, fill() {} };
   const lines = [];

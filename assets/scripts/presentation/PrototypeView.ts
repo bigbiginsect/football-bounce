@@ -19,8 +19,11 @@ export class PrototypeView {
     private readonly aim: Graphics;
     private readonly status: Label;
     private readonly info: Label;
+    private readonly restartButton: Node;
+    private readonly editButton: Node;
 
     constructor(parent: Node, private readonly config: PrototypeConfig, restart: () => void,
+        editLineups: () => void,
         private readonly catalog?: PlayerCatalog, private readonly portraitFrames?: ReadonlyMap<string, SpriteFrame>) {
         const camera = parent.getComponent(Canvas)?.cameraComponent;
         if (!camera) throw new Error('球场视图需要 Canvas 的渲染相机');
@@ -50,7 +53,9 @@ export class PrototypeView {
         this.aim = this.node(field, 'Aim', w, h).addComponent(Graphics);
         this.status = this.label(this.root, '', 490, 22);
         this.info = this.label(this.root, '', -500, 20);
-        this.button('重新开始', 0, restart);
+        this.restartButton = this.button('重新开始', 0, restart);
+        this.editButton = this.button('调整阵容', 155, editLineups);
+        this.editButton.active = false;
         this.label(this.root, `${config.version} · 标准模式 3 分钟 · 每队 5 人`, -612, 17);
     }
     private drawGrass(g: Graphics, width: number, height: number): void {
@@ -100,12 +105,13 @@ export class PrototypeView {
         label.verticalAlign = Label.VerticalAlign.CENTER; label.color = new Color(235, 244, 242);
         return label;
     }
-    private button(text: string, x: number, action: () => void): void {
+    private button(text: string, x: number, action: () => void): Node {
         const node = this.node(this.root, text, 270, 62); node.setPosition(x, -555);
         const g = node.addComponent(Graphics); g.fillColor = new Color(45, 69, 94);
         g.roundRect(-135, -31, 270, 62, 12); g.fill();
         const label = this.label(node, text, 0, 22); label.node.getComponent(UITransform)!.setContentSize(270, 62);
         node.on(Node.EventType.TOUCH_END, action);
+        return node;
     }
     /** 只在创建或更换阵容时调整节点；逐帧渲染只更新位置。 */
     setPlayers(state: GameState): void {
@@ -181,6 +187,9 @@ export class PrototypeView {
             a.lineTo(ex, ey); a.lineTo(ex - direction.x * 12 - direction.y * 7, ey - direction.y * 12 + direction.x * 7); a.stroke();
         }
         this.status.string = status; this.info.string = info;
+        const finished = state.phase === 'Finished';
+        this.editButton.active = finished;
+        this.restartButton.setPosition(finished ? -155 : 0, -555);
     }
     private drawBall(g: Graphics, x: number, y: number, radius: number, angleDegrees: number): void {
         g.fillColor = Color.WHITE; g.circle(x, y, radius); g.fill();

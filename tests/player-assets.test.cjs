@@ -14,10 +14,10 @@ const catalog = parsePlayerCatalog(raw);
 const config = freezeConfig(prototypeConfig);
 const clone = value => structuredClone(value);
 
-test('五人目录唯一、头像文件存在且评分在范围内', () => {
-  assert.equal(catalog.version, 'players-001');
-  assert.equal(catalog.players.length, 5);
-  assert.equal(new Set(catalog.players.map(player => player.id)).size, 5);
+test('球员目录唯一、头像文件存在且评分在范围内', () => {
+  assert.equal(catalog.version, 'players-002');
+  assert.equal(catalog.players.length, 6);
+  assert.equal(new Set(catalog.players.map(player => player.id)).size, 6);
   for (const player of catalog.players) {
     const filename = path.join(__dirname, '..', 'assets', 'resources', `${player.portraitPath}.png`);
     const bytes = fs.readFileSync(filename);

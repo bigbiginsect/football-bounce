@@ -6,6 +6,9 @@ import { LaunchGesture } from '../core/LaunchGesture';
 import { CocosPhysics } from '../adapters/physics/CocosPhysics';
 import { PrototypeView } from './PrototypeView';
 import { parsePlayerCatalog, PlayerCatalog } from '../core/PlayerCatalog';
+import { LineupEditor, LineupEdit } from '../application/LineupEditor';
+import type { MatchLineups } from '../core/Lineup';
+import { LineupView } from './LineupView';
 
 const { ccclass } = _decorator;
 let sessionSequence = 0;
@@ -19,6 +22,9 @@ export class Boot extends Component {
     private match?: LocalMatch;
     private physics?: CocosPhysics;
     private screen?: PrototypeView;
+    private lineupView?: LineupView;
+    private lineupEditor?: LineupEditor;
+    private lineups?: MatchLineups;
     private gesture?: LaunchGesture;
     private commandSequence = 0;
     private paused = false;
@@ -46,15 +52,13 @@ export class Boot extends Component {
         if (!isValid(this.node, true)) return;
         this.portraitFrames = new Map(frames);
         this.gesture = new LaunchGesture(this.config);
-        this.screen = new PrototypeView(this.node, this.config, () => {
-            if (!this.gesture?.preview()) this.reset();
-        }, this.catalog, this.portraitFrames);
-        this.reset(); this.listen();
+        this.openLineup(); this.listen();
     }
     private showStartupError(error: unknown): void {
         if (!isValid(this.node, true)) return;
         try {
             this.physics?.dispose(); this.physics = undefined; this.screen?.dispose(); this.screen = undefined;
+            this.lineupView?.dispose(); this.lineupView = undefined;
             const node = new Node('StartupError'); node.layer = this.node.layer; this.node.addChild(node);
             node.addComponent(UITransform).setContentSize(650, 300);
             const label = node.addComponent(Label); label.fontSize = 24;
@@ -63,12 +67,34 @@ export class Boot extends Component {
             console.error(error);
         } catch (displayError) { console.error(error, displayError); }
     }
+    private openLineup(): void {
+        this.gesture?.cancel(); this.physics?.dispose(); this.physics = undefined;
+        this.screen?.dispose(); this.screen = undefined; this.match = undefined;
+        this.lineupView?.dispose();
+        this.lineupEditor = new LineupEditor(this.catalog, this.config, this.lineups);
+        this.lineupView = new LineupView(this.node, this.catalog, this.portraitFrames,
+            edit => this.submitLineup(edit));
+        this.lineupView.setDraft(this.lineupEditor.getSnapshot());
+        this.message = '';
+    }
+    private submitLineup(edit: LineupEdit): void {
+        if (!this.lineupEditor?.execute(edit)) return;
+        const snapshot = this.lineupEditor.getSnapshot();
+        if (!snapshot.ready) { this.lineupView?.setDraft(snapshot); return; }
+        this.lineups = this.lineupEditor.toMatchLineups();
+        this.lineupView?.dispose(); this.lineupView = undefined; this.lineupEditor = undefined;
+        this.screen = new PrototypeView(this.node, this.config, () => {
+            if (!this.gesture?.preview()) this.reset();
+        }, () => this.openLineup(), this.catalog, this.portraitFrames);
+        this.reset();
+    }
     private reset(): void {
         this.gesture?.cancel(); this.physics?.dispose(); this.physics = undefined;
         // 会话 ID 来自组合层，规则核心不读取真实系统时间。
         const sequence = ++sessionSequence;
         const seed = (Date.now() ^ Math.imul(sequence, 0x9e3779b9)) >>> 0;
-        const state = createStandardMatchState(`local-${Date.now()}-${sequence}`, this.config, seed, this.catalog);
+        const state = createStandardMatchState(`local-${Date.now()}-${sequence}`, this.config, seed,
+            this.catalog, this.lineups);
         this.physics = new CocosPhysics(this.node.scene!, this.config, state, this.catalog);
         this.match = new LocalMatch(state, this.physics, this.config);
         this.screen?.setPlayers(state);
@@ -76,7 +102,12 @@ export class Boot extends Component {
     }
     private readonly beginTouch = (event: EventTouch): void => {
         const id = event.getID(); if (id === null) return;
-        if (this.background || !this.enabledInHierarchy || !this.match || !this.screen) return;
+        if (this.background || !this.enabledInHierarchy) return;
+        if (this.lineupView) {
+            if (this.paused) this.resume();
+            this.lineupView.touchStart(id, event.getLocation()); return;
+        }
+        if (!this.match || !this.screen) return;
         // 编辑器嵌入预览失焦后不一定先收到 window.focus；真实触摸本身即可恢复前台输入。
         // 同一个 TOUCH_START 继续用于选人，不能让用户的第一次拖动只负责解除暂停。
         if (this.paused) this.resume();
@@ -88,10 +119,12 @@ export class Boot extends Component {
     };
     private readonly moveTouch = (event: EventTouch): void => {
         const id = event.getID(); if (id === null) return;
+        if (this.lineupView) { this.lineupView.touchMove(id, event.getLocation()); return; }
         if (this.screen) this.gesture?.move(id, this.screen.toField(event.getLocation()));
     };
     private readonly endTouch = (event: EventTouch): void => {
         const id = event.getID(); if (id === null) return;
+        if (this.lineupView) { this.lineupView.touchEnd(id, event.getLocation()); return; }
         if (this.paused || !this.screen || !this.match) return;
         const launch = this.gesture?.end(id, this.screen.toField(event.getLocation()));
         if (!launch?.aim) return;
@@ -104,9 +137,11 @@ export class Boot extends Component {
     };
     private readonly cancelTouch = (event: EventTouch): void => {
         const id = event.getID(); if (id !== null) this.gesture?.cancel(id);
+        if (id !== null) this.lineupView?.touchCancel(id);
     };
     private readonly pause = (): void => {
-        this.paused = true; this.gesture?.cancel(); this.match?.discardAccumulatedTime();
+        this.paused = true; this.gesture?.cancel(); this.lineupView?.touchCancel();
+        this.match?.discardAccumulatedTime();
         this.draw();
     };
     private readonly resume = (): void => {
@@ -126,7 +161,7 @@ export class Boot extends Component {
             window.addEventListener('blur', this.pause); window.addEventListener('focus', this.resume);
         }
     }
-    onEnable(): void { if (this.match) { this.resume(); this.listen(); } }
+    onEnable(): void { if (this.match || this.lineupEditor) { this.resume(); this.listen(); } }
     onDisable(): void {
         this.pause(); this.listening = false;
         input.off(Input.EventType.TOUCH_START, this.beginTouch, this);
@@ -171,5 +206,5 @@ export class Boot extends Component {
             + `${status.droppedSeconds > 0.01 ? ' · 卡顿已限步' : ''}`,
             this.physics?.getBallAngle?.() ?? 0);
     }
-    onDestroy(): void { this.physics?.dispose(); this.screen?.dispose(); }
+    onDestroy(): void { this.physics?.dispose(); this.screen?.dispose(); this.lineupView?.dispose(); }
 }

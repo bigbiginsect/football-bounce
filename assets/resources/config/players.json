@@ -1,10 +1,11 @@
 {
-  "version": "players-001",
+  "version": "players-002",
   "players": [
     { "id": "messi", "name": "梅西", "portraitPath": "portraits/messi", "weight": 55, "power": 84, "precision": 96 },
     { "id": "cristiano-ronaldo", "name": "C 罗", "portraitPath": "portraits/cristiano-ronaldo", "weight": 78, "power": 96, "precision": 82 },
     { "id": "mbappe", "name": "姆巴佩", "portraitPath": "portraits/mbappe", "weight": 62, "power": 90, "precision": 82 },
     { "id": "de-bruyne", "name": "德布劳内", "portraitPath": "portraits/de-bruyne", "weight": 70, "power": 84, "precision": 94 },
-    { "id": "van-dijk", "name": "范戴克", "portraitPath": "portraits/van-dijk", "weight": 95, "power": 77, "precision": 78 }
+    { "id": "van-dijk", "name": "范戴克", "portraitPath": "portraits/van-dijk", "weight": 95, "power": 77, "precision": 78 },
+    { "id": "haaland", "name": "哈兰德", "portraitPath": "portraits/haaland", "weight": 90, "power": 94, "precision": 72 }
   ]
 }
