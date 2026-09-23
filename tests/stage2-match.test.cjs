@@ -3,10 +3,12 @@ const assert = require('node:assert/strict');
 const { LocalMatch } = require('../.test-output/application/LocalMatch.js');
 const { prototypeConfig, freezeConfig, createStandardMatchState, detectGoal } =
   require('../.test-output/core/PrototypeConfig.js');
+const { parsePlayerCatalog } = require('../.test-output/core/PlayerCatalog.js');
 const { createBoundaryWalls, isPlayablePosition } = require('../.test-output/core/BoundaryGeometry.js');
 
 const clone = value => structuredClone(value);
 const config = freezeConfig(prototypeConfig);
+const catalog = parsePlayerCatalog(require('../assets/resources/config/players.json'));
 
 class FakePhysics {
   launches = []; steps = []; stops = 0; onStep = () => {};
@@ -27,7 +29,7 @@ class FakePhysics {
 
 function setup(patch = {}, seed = 123) {
   const currentConfig = freezeConfig({ ...config, ...patch });
-  const state = createStandardMatchState('standard-test', currentConfig, seed);
+  const state = createStandardMatchState('standard-test', currentConfig, seed, catalog);
   const physics = new FakePhysics(currentConfig);
   const match = new LocalMatch(state, physics, currentConfig);
   let commandSequence = 0;
@@ -47,8 +49,9 @@ function fixedSteps(match, count, step = config.fixedStep) {
 }
 
 test('标准模式创建 5v5，模式局时和瞄准时限来自配置，开局位置无重叠', () => {
-  const state = createStandardMatchState('m', config, 42);
-  assert.equal(state.schemaVersion, 2);
+  const state = createStandardMatchState('m', config, 42, catalog);
+  assert.equal(state.schemaVersion, 3);
+  assert.equal(state.catalogVersion, catalog.version);
   assert.equal(state.modeId, 'standard');
   assert.equal(state.players.filter(player => player.ownerId === 'blue').length, 5);
   assert.equal(state.players.filter(player => player.ownerId === 'red').length, 5);
@@ -65,14 +68,14 @@ test('标准模式创建 5v5，模式局时和瞄准时限来自配置，开局�
 });
 
 test('同种子严格复现先手和随机状态，样本种子能产生双方先手', () => {
-  const first = createStandardMatchState('one', config, 20260922);
-  const second = createStandardMatchState('two', config, 20260922);
+  const first = createStandardMatchState('one', config, 20260922, catalog);
+  const second = createStandardMatchState('two', config, 20260922, catalog);
   assert.deepEqual(first.random, second.random);
   const outcomes = new Set();
-  for (let seed = 1; seed <= 100; seed++) outcomes.add(createStandardMatchState(`m-${seed}`, config, seed).activeOperatorId);
+  for (let seed = 1; seed <= 100; seed++) outcomes.add(createStandardMatchState(`m-${seed}`, config, seed, catalog).activeOperatorId);
   assert.deepEqual([...outcomes].sort(), ['blue', 'red']);
-  assert.throws(() => createStandardMatchState('bad', config, -1));
-  assert.throws(() => createStandardMatchState('bad', config, 0x100000000));
+  assert.throws(() => createStandardMatchState('bad', config, -1, catalog));
+  assert.throws(() => createStandardMatchState('bad', config, 0x100000000, catalog));
 });
 
 test('普通运动完全停止后交换行动方并重置 20 秒瞄准时间', () => {
@@ -123,7 +126,7 @@ test('比赛在 Aiming 阶段到时立即结束，平局不加时且结束后拒
 });
 
 test('皮球必须整体越线且整体位于门柱之间，球门口不执行端线贴墙释放', () => {
-  const make = (x, y) => ({ ...createStandardMatchState('goal', config, 1),
+  const make = (x, y) => ({ ...createStandardMatchState('goal', config, 1, catalog),
     ball: { position: { x, y }, velocity: { x: 0, y: 0 } } });
   const line = config.fieldHeight / 2;
   assert.equal(detectGoal(make(0, line + config.ballRadius - 1e-5), config), null);
@@ -252,7 +255,7 @@ test('状态快照可恢复且新比赛的 ID、种子、比分和时钟互不�
   const restored = new LocalMatch(snapshot, restoredPhysics, original.config);
   assert.deepEqual(restored.getSnapshot(), snapshot);
   assert.deepEqual(restoredPhysics.frame.ball, snapshot.ball);
-  const fresh = createStandardMatchState('fresh', original.config, 99);
+  const fresh = createStandardMatchState('fresh', original.config, 99, catalog);
   assert.notEqual(fresh.matchId, snapshot.matchId);
   assert.notEqual(fresh.random.seed, snapshot.random.seed);
   assert.deepEqual(fresh.score, { blue: 0, red: 0 });

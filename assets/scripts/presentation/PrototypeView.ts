@@ -1,7 +1,10 @@
-import { Node, UITransform, Graphics, Color, Label, Vec3, isValid, Canvas, Camera } from 'cc';
+import { Node, UITransform, Graphics, Color, Label, Vec3, isValid, Canvas, Camera,
+    Mask, Sprite, SpriteFrame } from 'cc';
 import type { GameState, Vector2Data } from '../core/GameState';
 import type { PrototypeConfig } from '../core/PrototypeConfig';
 import type { LaunchGesture } from '../core/LaunchGesture';
+import type { PlayerCatalog } from '../core/PlayerCatalog';
+import { getPlayerTemplate, playerGameplayValues } from '../core/PlayerCatalog';
 
 const pixelsPerMeter = 80;
 /** 位置读取权威状态；本地皮球图案角度读取物理刚体。物理节点不挂在本视图下。 */
@@ -10,12 +13,15 @@ export class PrototypeView {
     private readonly field: UITransform;
     private readonly camera: Camera;
     private readonly bodies: Graphics;
+    private readonly portraitLayer: Node;
+    private readonly portraitNodes = new Map<string, { node: Node; templateId: string }>();
     private readonly powerCircle: Graphics;
     private readonly aim: Graphics;
     private readonly status: Label;
     private readonly info: Label;
 
-    constructor(parent: Node, private readonly config: PrototypeConfig, restart: () => void) {
+    constructor(parent: Node, private readonly config: PrototypeConfig, restart: () => void,
+        private readonly catalog?: PlayerCatalog, private readonly portraitFrames?: ReadonlyMap<string, SpriteFrame>) {
         const camera = parent.getComponent(Canvas)?.cameraComponent;
         if (!camera) throw new Error('球场视图需要 Canvas 的渲染相机');
         this.camera = camera;
@@ -40,6 +46,7 @@ export class PrototypeView {
         g.rect(-120, -h / 2, 240, 115); g.rect(-120, h / 2 - 115, 240, 115); g.stroke();
         this.powerCircle = this.node(field, 'PowerCircle', w, h).addComponent(Graphics);
         this.bodies = this.node(field, 'Bodies', w, h).addComponent(Graphics);
+        this.portraitLayer = this.node(field, 'Portraits', w, h);
         this.aim = this.node(field, 'Aim', w, h).addComponent(Graphics);
         this.status = this.label(this.root, '', 490, 22);
         this.info = this.label(this.root, '', -500, 20);
@@ -100,6 +107,29 @@ export class PrototypeView {
         const label = this.label(node, text, 0, 22); label.node.getComponent(UITransform)!.setContentSize(270, 62);
         node.on(Node.EventType.TOUCH_END, action);
     }
+    /** 只在创建或更换阵容时调整节点；逐帧渲染只更新位置。 */
+    setPlayers(state: GameState): void {
+        if (!this.catalog || !this.portraitFrames) return;
+        for (const [id, item] of this.portraitNodes) {
+            const player = state.players.find(entry => entry.instanceId === id);
+            if (!player || player.templateId !== item.templateId) {
+                item.node.destroy(); this.portraitNodes.delete(id);
+            }
+        }
+        const diameter = this.config.playerRadius * 2 * pixelsPerMeter - 8;
+        for (const player of state.players) {
+            if (this.portraitNodes.has(player.instanceId)) continue;
+            const template = getPlayerTemplate(this.catalog, player.templateId);
+            const frame = this.portraitFrames.get(template.id);
+            if (!frame) throw new Error(`缺少头像资源：${template.id}`);
+            const node = this.node(this.portraitLayer, player.instanceId, diameter, diameter);
+            const mask = node.addComponent(Mask); mask.type = Mask.Type.GRAPHICS_ELLIPSE; mask.segments = 32;
+            const imageNode = this.node(node, 'Image', diameter, diameter);
+            const sprite = imageNode.addComponent(Sprite); sprite.sizeMode = Sprite.SizeMode.CUSTOM;
+            sprite.spriteFrame = frame;
+            this.portraitNodes.set(player.instanceId, { node, templateId: player.templateId });
+        }
+    }
     toField(point: Vector2Data): Vector2Data {
         // 与 Cocos UI 命中检测保持一致：屏幕 → 实际渲染相机 → 球场局部坐标。
         // getUILocation 仅按 view 缩放换算，不能代替带相机/预览视口的世界坐标转换。
@@ -115,6 +145,8 @@ export class PrototypeView {
             g.circle(player.position.x * pixelsPerMeter, player.position.y * pixelsPerMeter, this.config.playerRadius * pixelsPerMeter); g.fill();
             g.strokeColor = player.ownerId === state.activeOperatorId ? new Color(255, 220, 90) : Color.WHITE;
             g.lineWidth = player.ownerId === state.activeOperatorId ? 4 : 2; g.stroke();
+            this.portraitNodes?.get(player.instanceId)?.node.setPosition(
+                player.position.x * pixelsPerMeter, player.position.y * pixelsPerMeter);
         }
         this.drawBall(g, state.ball.position.x * pixelsPerMeter, state.ball.position.y * pixelsPerMeter,
             this.config.ballRadius * pixelsPerMeter, ballAngle);
@@ -133,7 +165,9 @@ export class PrototypeView {
             const { direction } = gesture.aim;
             const x = player.position.x * pixelsPerMeter; const y = player.position.y * pixelsPerMeter;
             // 精度决定可见瞄准长度；力度只影响发射冲量和百分比提示。
-            const length = this.config.aimLength * pixelsPerMeter;
+            const length = (this.catalog
+                ? playerGameplayValues(getPlayerTemplate(this.catalog, player.templateId), this.config).aimLength
+                : this.config.aimLength) * pixelsPerMeter;
             const ex = x + direction.x * length; const ey = y + direction.y * length;
             a.strokeColor = Color.WHITE; a.lineWidth = 3;
             const dash = this.config.aimDashLength * pixelsPerMeter;

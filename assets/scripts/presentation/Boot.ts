@@ -1,10 +1,11 @@
 import { _decorator, Component, EventTouch, input, Input, game, Game, view, ResolutionPolicy,
-    Label, Node, UITransform } from 'cc';
+    Label, Node, UITransform, JsonAsset, SpriteFrame, assetManager, AssetManager, isValid } from 'cc';
 import { LocalMatch } from '../application/LocalMatch';
 import { createStandardMatchState, freezeConfig, prototypeConfig, PrototypeConfig } from '../core/PrototypeConfig';
 import { LaunchGesture } from '../core/LaunchGesture';
 import { CocosPhysics } from '../adapters/physics/CocosPhysics';
 import { PrototypeView } from './PrototypeView';
+import { parsePlayerCatalog, PlayerCatalog } from '../core/PlayerCatalog';
 
 const { ccclass } = _decorator;
 let sessionSequence = 0;
@@ -13,6 +14,8 @@ let sessionSequence = 0;
 @ccclass('Boot')
 export class Boot extends Component {
     private config!: PrototypeConfig;
+    private catalog!: PlayerCatalog;
+    private portraitFrames = new Map<string, SpriteFrame>();
     private match?: LocalMatch;
     private physics?: CocosPhysics;
     private screen?: PrototypeView;
@@ -26,30 +29,49 @@ export class Boot extends Component {
 
     start(): void {
         view.setDesignResolutionSize(720, 1280, ResolutionPolicy.SHOW_ALL);
+        void this.initialize().catch(error => this.showStartupError(error));
+    }
+    private async initialize(): Promise<void> {
+        this.config = freezeConfig(prototypeConfig);
+        // 编辑器预览可能早于 resources 目录导入启动，先显式装入该资源包。
+        const bundle = await new Promise<AssetManager.Bundle>((resolve, reject) =>
+            assetManager.loadBundle('resources', (error, value) => error ? reject(error) : resolve(value)));
+        const catalogAsset = await new Promise<JsonAsset>((resolve, reject) =>
+            bundle.load('config/players', JsonAsset, (error, asset) => error ? reject(error) : resolve(asset)));
+        this.catalog = parsePlayerCatalog(catalogAsset.json);
+        const frames = await Promise.all(this.catalog.players.map(template =>
+            new Promise<readonly [string, SpriteFrame]>((resolve, reject) =>
+                bundle.load(`${template.portraitPath}/spriteFrame`, SpriteFrame, (error, frame) =>
+                    error ? reject(error) : resolve([template.id, frame])))));
+        if (!isValid(this.node, true)) return;
+        this.portraitFrames = new Map(frames);
+        this.gesture = new LaunchGesture(this.config);
+        this.screen = new PrototypeView(this.node, this.config, () => {
+            if (!this.gesture?.preview()) this.reset();
+        }, this.catalog, this.portraitFrames);
+        this.reset(); this.listen();
+    }
+    private showStartupError(error: unknown): void {
+        if (!isValid(this.node, true)) return;
         try {
-            this.config = freezeConfig(prototypeConfig);
-            this.gesture = new LaunchGesture(this.config);
-            this.screen = new PrototypeView(this.node, this.config, () => {
-                if (!this.gesture?.preview()) this.reset();
-            });
-            this.reset(); this.listen();
-        } catch (error) {
             this.physics?.dispose(); this.physics = undefined; this.screen?.dispose(); this.screen = undefined;
             const node = new Node('StartupError'); node.layer = this.node.layer; this.node.addChild(node);
             node.addComponent(UITransform).setContentSize(650, 300);
             const label = node.addComponent(Label); label.fontSize = 24;
-            label.string = `原型启动失败\n${String(error)}\n请检查配置或 Box2D 模块后重新运行`; label.enableWrapText = true;
+            label.string = `原型启动失败\n${String(error)}\n请检查球员资源、配置或 Box2D 模块后重新运行`;
+            label.enableWrapText = true;
             console.error(error);
-        }
+        } catch (displayError) { console.error(error, displayError); }
     }
     private reset(): void {
         this.gesture?.cancel(); this.physics?.dispose(); this.physics = undefined;
         // 会话 ID 来自组合层，规则核心不读取真实系统时间。
         const sequence = ++sessionSequence;
         const seed = (Date.now() ^ Math.imul(sequence, 0x9e3779b9)) >>> 0;
-        const state = createStandardMatchState(`local-${Date.now()}-${sequence}`, this.config, seed);
-        this.physics = new CocosPhysics(this.node.scene!, this.config, state);
+        const state = createStandardMatchState(`local-${Date.now()}-${sequence}`, this.config, seed, this.catalog);
+        this.physics = new CocosPhysics(this.node.scene!, this.config, state, this.catalog);
         this.match = new LocalMatch(state, this.physics, this.config);
+        this.screen?.setPlayers(state);
         this.message = ''; this.skipFrame = true; this.draw();
     }
     private readonly beginTouch = (event: EventTouch): void => {

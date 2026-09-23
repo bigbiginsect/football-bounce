@@ -1,8 +1,11 @@
 import type { GameState } from './GameState';
+import type { PlayerCatalog } from './PlayerCatalog';
+import type { MatchLineups } from './Lineup';
+import { defaultLineups, validateLineups } from './Lineup';
 
 /** 阶段 1 物理基线与阶段 2 标准模式参数。修改后停止并重新运行预览，同时更新 version。 */
 export const prototypeConfig = {
-    version: 'stage2-006',
+    version: 'stage3-001',
     fieldWidth: 6.8, fieldHeight: 10.5, wallThickness: 0.25,
     goalWidth: 2.4, goalDepth: 0.6,
     playerRadius: 0.28, ballRadius: 0.15,
@@ -86,7 +89,8 @@ export function createPrototypeState(matchId: string, config: PrototypeConfig, f
             ? { x: config.fieldWidth / 2 - config.ballRadius,
                 y: fixture === 'corner' ? config.fieldHeight / 2 - config.ballRadius : 0 }
             : { x: 0, y: -0.25 } };
-    return { schemaVersion: 2, revision: 0, matchId, modeId: 'practice', configVersion: config.version,
+    return { schemaVersion: 3, revision: 0, matchId, modeId: 'practice', configVersion: config.version,
+        catalogVersion: 'practice-fixture',
         turnNumber: 1, phase: 'Aiming', activeOperatorId: 'a',
         clock: { matchDurationMs: config.matchSeconds * 1000, elapsedMs: 0,
             remainingMs: config.matchSeconds * 1000, turnDurationMs: config.aimingSeconds * 1000,
@@ -109,23 +113,26 @@ function randomValue(state: number): number {
 }
 
 /** 标准模式比赛。种子由组合层注入，随机推进及先手决定留在纯规则层。 */
-export function createStandardMatchState(matchId: string, config: PrototypeConfig, seed: number): GameState {
+export function createStandardMatchState(matchId: string, config: PrototypeConfig, seed: number,
+    catalog: PlayerCatalog, selections: MatchLineups = defaultLineups()): GameState {
     if (!Number.isSafeInteger(seed) || seed < 0 || seed > 0xffffffff) throw new Error('随机种子必须是 uint32');
     const normalizedSeed = (seed >>> 0) || 0x6d2b79f5;
     const randomState = nextRandomState(normalizedSeed);
     const firstOperatorId = randomValue(randomState) < 0.5 ? 'blue' : 'red';
     const body = (x: number, y: number) => ({ position: { x, y }, velocity: { x: 0, y: 0 } });
-    // 临时对称开局坐标只用于阶段 2 可玩闭环；不命名或锁定为某种阵型。
-    const half = [[-1.6, -3.8], [1.6, -3.8], [0, -3], [-1.25, -2], [1.25, -2]] as const;
-    const players = [...half.map(([x, y], index) => ({ ...body(x, y), instanceId: `blue-${index + 1}`,
-        templateId: 'standard-player', ownerId: 'blue' })),
-    ...half.map(([x, y], index) => ({ ...body(x === 0 ? 0 : -x, -y), instanceId: `red-${index + 1}`,
-        templateId: 'standard-player', ownerId: 'red' }))];
+    const lineups = validateLineups(selections, catalog, config);
+    const players = [...lineups.blue.map((selection, index) => ({
+        ...body(selection.position.x, selection.position.y), instanceId: `blue-${index + 1}`,
+        templateId: selection.templateId, ownerId: 'blue' })),
+    ...lineups.red.map((selection, index) => ({
+        ...body(selection.position.x, selection.position.y), instanceId: `red-${index + 1}`,
+        templateId: selection.templateId, ownerId: 'red' }))];
     const kickoff = { players: players.map(p => ({ instanceId: p.instanceId, position: { ...p.position } })),
         ballPosition: { x: 0, y: 0 } };
     const matchDurationMs = config.matchSeconds * 1000;
     const turnDurationMs = config.aimingSeconds * 1000;
-    return { schemaVersion: 2, revision: 0, matchId, modeId: 'standard', configVersion: config.version,
+    return { schemaVersion: 3, revision: 0, matchId, modeId: 'standard', configVersion: config.version,
+        catalogVersion: catalog.version,
         turnNumber: 1, phase: 'Aiming', activeOperatorId: firstOperatorId,
         clock: { matchDurationMs, elapsedMs: 0, remainingMs: matchDurationMs,
             turnDurationMs, turnRemainingMs: turnDurationMs },

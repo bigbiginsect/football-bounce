@@ -7,16 +7,20 @@ import type { PrototypeConfig } from '../../core/PrototypeConfig';
 import { detectGoal } from '../../core/PrototypeConfig';
 import { releaseWallContact } from '../../core/WallContact';
 import { createBoundaryWalls } from '../../core/BoundaryGeometry';
+import { getPlayerTemplate, playerGameplayValues, PlayerCatalog } from '../../core/PlayerCatalog';
 
 /** 物理根节点不参与 UI 缩放。位置为引擎单位，速度/冲量按 Box2D 的 SI 单位。 */
 export class CocosPhysics implements PhysicsPort {
     private readonly root = new Node('PrototypePhysics');
     private readonly bodies = new Map<string, RigidBody2D>();
+    private readonly impulses = new Map<string, number>();
     private readonly system = PhysicsSystem2D.instance;
     private readonly previous = { auto: this.system.autoSimulation, gravity: this.system.gravity.clone(),
         enabled: this.system.enable, mask: this.system.collisionMatrix[1] };
 
-    constructor(scene: Node, private readonly config: PrototypeConfig, state: GameState) {
+    constructor(scene: Node, private readonly config: PrototypeConfig, state: GameState,
+        catalog: PlayerCatalog) {
+        if (state.catalogVersion !== catalog.version) throw new Error('比赛球员目录版本不匹配');
         if (PhysicsSystem2D.PHYSICS_NONE || PhysicsSystem2D.PHYSICS_BUILTIN) {
             throw new Error('请在项目设置中启用 Box2D 物理模块');
         }
@@ -27,8 +31,12 @@ export class CocosPhysics implements PhysicsPort {
         this.system.collisionMatrix[1] = 1;
         const c = config;
         for (const wall of createBoundaryWalls(c)) this.wall(wall.x, wall.y, wall.width, wall.height);
-        for (const player of state.players) this.circle(player.instanceId, player, false);
-        this.circle('ball', state.ball, true);
+        for (const player of state.players) {
+            const values = playerGameplayValues(getPlayerTemplate(catalog, player.templateId), config);
+            this.circle(player.instanceId, player, false, values.mass);
+            this.impulses.set(player.instanceId, values.maxImpulse);
+        }
+        this.circle('ball', state.ball, true, config.ballMass);
         this.restore(state);
     }
 
@@ -42,7 +50,7 @@ export class CocosPhysics implements PhysicsPort {
         node.active = true;
     }
 
-    private circle(id: string, state: BodyState, ball: boolean): void {
+    private circle(id: string, state: BodyState, ball: boolean, mass: number): void {
         const c = this.config; const radius = ball ? c.ballRadius : c.playerRadius;
         const node = new Node(id); node.active = false; this.root.addChild(node);
         node.setPosition(state.position.x * PHYSICS_2D_PTM_RATIO, state.position.y * PHYSICS_2D_PTM_RATIO);
@@ -53,7 +61,7 @@ export class CocosPhysics implements PhysicsPort {
         body.linearDamping = ball ? c.ballDamping : c.playerDamping;
         const collider = node.addComponent(CircleCollider2D);
         collider.radius = radius * PHYSICS_2D_PTM_RATIO;
-        collider.density = (ball ? c.ballMass : c.playerMass) / (Math.PI * radius * radius);
+        collider.density = mass / (Math.PI * radius * radius);
         collider.friction = c.friction; collider.restitution = ball ? c.ballRestitution : c.playerRestitution;
         node.active = true; this.bodies.set(id, body);
     }
@@ -69,7 +77,7 @@ export class CocosPhysics implements PhysicsPort {
         this.system.physicsWorld.syncSceneToPhysics();
     }
     launch(command: Command): void {
-        const impulse = command.power * this.config.maxImpulse;
+        const impulse = command.power * (this.impulses.get(command.playerId) ?? this.config.maxImpulse);
         this.bodies.get(command.playerId)!.applyLinearImpulseToCenter(
             new Vec2(command.direction.x * impulse, command.direction.y * impulse), true);
         this.limitSpeeds();
@@ -114,7 +122,7 @@ export class CocosPhysics implements PhysicsPort {
         for (const body of this.bodies.values()) { body.linearVelocity = new Vec2(); body.angularVelocity = 0; }
     }
     dispose(): void {
-        this.stop(); this.root.active = false; this.root.destroy(); this.bodies.clear();
+        this.stop(); this.root.active = false; this.root.destroy(); this.bodies.clear(); this.impulses.clear();
         this.system.autoSimulation = this.previous.auto; this.system.gravity = this.previous.gravity;
         this.system.enable = this.previous.enabled; this.system.collisionMatrix[1] = this.previous.mask;
         this.system.resetAccumulator();

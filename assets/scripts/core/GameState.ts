@@ -15,11 +15,12 @@ export interface KickoffState {
     readonly ballPosition: Vector2Data;
 }
 export interface GameState {
-    readonly schemaVersion: 2;
+    readonly schemaVersion: 3;
     readonly revision: number;
     readonly matchId: string;
     readonly modeId: string;
     readonly configVersion: string;
+    readonly catalogVersion: string;
     readonly turnNumber: number;
     readonly phase: MatchPhase;
     readonly activeOperatorId: string;

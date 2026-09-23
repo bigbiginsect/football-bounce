@@ -35,8 +35,12 @@ const { PrototypeView } = load('assets/scripts/presentation/PrototypeView.ts');
 const { CocosPhysics } = load('assets/scripts/adapters/physics/CocosPhysics.ts');
 const { LocalMatch } = load('assets/scripts/application/LocalMatch.ts');
 const { LaunchGesture } = load('assets/scripts/core/LaunchGesture.ts');
-const { prototypeConfig, freezeConfig, createPrototypeState } = load('assets/scripts/core/PrototypeConfig.ts');
+const { prototypeConfig, freezeConfig, createPrototypeState, createStandardMatchState } =
+  load('assets/scripts/core/PrototypeConfig.ts');
+const { parsePlayerCatalog, playerGameplayValues, getPlayerTemplate } =
+  load('assets/scripts/core/PlayerCatalog.ts');
 const config = freezeConfig(prototypeConfig);
+const catalog = parsePlayerCatalog(require('../assets/resources/config/players.json'));
 function setup() {
   const boot = new Boot(); boot.config = config; boot.gesture = new LaunchGesture(config);
   const physics = { restore(state) { this.state = state; }, launch() {}, step() {}, stop() {},
@@ -174,4 +178,50 @@ test('视图随场景销毁后不再重复 destroy', () => {
   screen.root = { valid: true, destroying: false, destroy() { calls++; this.destroying = true; } };
   screen.dispose(); screen.dispose(); assert.equal(calls, 1);
   screen.root.valid = false; screen.dispose(); assert.equal(calls, 1);
+});
+test('圆形头像节点按实例缓存，换模板时只替换相应节点', () => {
+  class TestNode {
+    constructor(name) { this.name = name; this.children = []; this.layer = 1; this.destroyed = false; }
+    addChild(node) { this.children.push(node); }
+    addComponent(ComponentType) { const item = new ComponentType(); item.node = this; return item; }
+    setPosition(x, y) { this.position = { x, y }; }
+    destroy() { this.destroyed = true; }
+  }
+  cc.Node = TestNode;
+  cc.UITransform = class { setContentSize(width, height) { this.size = { width, height }; } };
+  cc.Mask = class { static Type = { GRAPHICS_ELLIPSE: 1 }; };
+  cc.Sprite = class { static SizeMode = { CUSTOM: 2 }; };
+  const screen = Object.create(PrototypeView.prototype);
+  screen.config = config; screen.catalog = catalog;
+  screen.portraitFrames = new Map(catalog.players.map(player => [player.id, { id: player.id }]));
+  screen.portraitNodes = new Map(); screen.portraitLayer = new TestNode('Portraits');
+  const state = createStandardMatchState('portraits', config, 9, catalog);
+  screen.setPlayers(state);
+  assert.equal(screen.portraitNodes.size, 10);
+  assert.equal(screen.portraitLayer.children.length, 10);
+  const first = screen.portraitNodes.get('blue-1').node;
+  screen.setPlayers(state);
+  assert.equal(screen.portraitLayer.children.length, 10);
+  const changed = { ...state, players: state.players.map((player, index) =>
+    index === 0 ? { ...player, templateId: 'messi' } : player) };
+  screen.setPlayers(changed);
+  assert.equal(first.destroyed, true);
+  assert.equal(screen.portraitNodes.get('blue-1').templateId, 'messi');
+  assert.equal(screen.portraitLayer.children.length, 11);
+});
+test('物理发射读取当前球员专属冲量', () => {
+  const physics = Object.create(CocosPhysics.prototype);
+  physics.config = config;
+  physics.impulses = new Map([['blue-1', playerGameplayValues(getPlayerTemplate(catalog, 'messi'), config).maxImpulse],
+    ['blue-2', playerGameplayValues(getPlayerTemplate(catalog, 'cristiano-ronaldo'), config).maxImpulse]]);
+  const calls = [];
+  physics.bodies = new Map([...physics.impulses.keys()].map(id => [id, {
+    applyLinearImpulseToCenter(vector) { calls.push({ id, x: vector.x, y: vector.y }); },
+    linearVelocity: { length: () => 0 },
+  }]));
+  cc.Vec2 = class { constructor(x, y) { this.x = x; this.y = y; } };
+  physics.launch({ playerId: 'blue-1', power: 1, direction: { x: 1, y: 0 } });
+  physics.launch({ playerId: 'blue-2', power: 1, direction: { x: 1, y: 0 } });
+  assert.ok(calls[1].x > calls[0].x);
+  assert.equal(calls[0].y, 0);
 });
