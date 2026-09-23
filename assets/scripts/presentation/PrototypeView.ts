@@ -26,8 +26,8 @@ export class PrototypeView {
         this.field = field.getComponent(UITransform)!;
         const g = field.addComponent(Graphics);
         const w = config.fieldWidth * pixelsPerMeter; const h = config.fieldHeight * pixelsPerMeter;
-        g.fillColor = new Color(24, 85, 62); g.rect(-w / 2, -h / 2, w, h); g.fill();
-        g.strokeColor = new Color(180, 219, 190); g.lineWidth = 3;
+        this.drawGrass(g, w, h);
+        g.strokeColor = new Color(234, 244, 223, 232); g.lineWidth = 3;
         const goalWidth = config.goalWidth * pixelsPerMeter;
         const goalDepth = config.goalDepth * pixelsPerMeter;
         g.rect(-goalWidth / 2, h / 2, goalWidth, goalDepth);
@@ -45,6 +45,42 @@ export class PrototypeView {
         this.info = this.label(this.root, '', -500, 20);
         this.button('重新开始', 0, restart);
         this.label(this.root, `${config.version} · 标准模式 3 分钟 · 每队 5 人`, -612, 17);
+    }
+    private drawGrass(g: Graphics, width: number, height: number): void {
+        // 横向修剪条纹和细草纹只绘制一次；固定种子避免每次重开时草地外观跳变。
+        const bands = 12;
+        const bandHeight = height / bands;
+        for (let index = 0; index < bands; index++) {
+            const y = -height / 2 + index * bandHeight;
+            g.fillColor = index % 2 === 0 ? new Color(42, 132, 73) : new Color(34, 111, 62);
+            g.rect(-width / 2, y, width, bandHeight); g.fill();
+            // 条纹内部的微弱亮度变化，让色带看起来像顺逆向压平的草叶。
+            g.fillColor = new Color(145, 200, 119, 11);
+            g.rect(-width / 2, y + bandHeight * 0.16, width, bandHeight * 0.22); g.fill();
+        }
+
+        let seed = 0x6d2b79f5;
+        const random = (): number => {
+            seed ^= seed << 13; seed ^= seed >>> 17; seed ^= seed << 5;
+            return (seed >>> 0) / 0x100000000;
+        };
+        // 细短笔触作为草叶颗粒，按颜色合批；全部限制在球场矩形以内。
+        for (const color of [new Color(167, 216, 133, 35), new Color(8, 55, 33, 37)]) {
+            g.fillColor = color;
+            for (let index = 0; index < 1500; index++) {
+                const x = -width / 2 + random() * (width - 2);
+                const y = -height / 2 + random() * (height - 6);
+                g.rect(x, y, 0.7 + random() * 0.9, 1.5 + random() * 4.5);
+            }
+            g.fill();
+        }
+
+        g.fillColor = new Color(5, 39, 27, 48);
+        g.rect(-width / 2, -height / 2, 12, height);
+        g.rect(width / 2 - 12, -height / 2, 12, height);
+        g.rect(-width / 2, -height / 2, width, 10);
+        g.rect(-width / 2, height / 2 - 10, width, 10);
+        g.fill();
     }
     private node(parent: Node, name: string, width: number, height: number): Node {
         const node = new Node(name); node.layer = parent.layer; parent.addChild(node);
