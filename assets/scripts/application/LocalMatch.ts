@@ -3,6 +3,7 @@ import type { GameState } from '../core/GameState';
 import { validateCommand, Rejection } from '../core/validateCommand';
 import type { PhysicsFrame, PhysicsPort } from '../core/PhysicsPort';
 import { detectGoal, freezeConfig, PrototypeConfig } from '../core/PrototypeConfig';
+import { isPlayablePosition } from '../core/BoundaryGeometry';
 
 function copy<T>(value: T): T { return JSON.parse(JSON.stringify(value)) as T; }
 export type CommandResult = { readonly ok: true; readonly revision: number }
@@ -122,12 +123,8 @@ export class LocalMatch {
             { body: frame.ball, radius: config.ballRadius }].every(({ body, radius }) => {
             const { position: p, velocity: v } = body;
             const finite = [p.x, p.y, v.x, v.y].every(Number.isFinite);
-            const withinPitch = Math.abs(p.x) <= config.fieldWidth / 2 - radius + 0.04
-                && Math.abs(p.y) <= config.fieldHeight / 2 - radius + 0.04;
-            const withinGoal = Math.abs(p.x) <= config.goalWidth / 2 - radius + 0.04
-                && Math.abs(p.y) >= config.fieldHeight / 2 - radius - 0.04
-                && Math.abs(p.y) <= config.fieldHeight / 2 + config.goalDepth - radius + 0.04;
-            return finite && (withinPitch || withinGoal) && Math.hypot(v.x, v.y) <= config.maxSpeed + 1e-6;
+            return finite && isPlayablePosition(p, radius, config)
+                && Math.hypot(v.x, v.y) <= config.maxSpeed + 1e-6;
         });
     }
 

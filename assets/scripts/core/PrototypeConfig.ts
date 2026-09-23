@@ -2,7 +2,7 @@ import type { GameState } from './GameState';
 
 /** 阶段 1 物理基线与阶段 2 标准模式参数。修改后停止并重新运行预览，同时更新 version。 */
 export const prototypeConfig = {
-    version: 'stage2-001',
+    version: 'stage2-003',
     fieldWidth: 6.8, fieldHeight: 10.5, wallThickness: 0.25,
     goalWidth: 2.4, goalDepth: 0.6,
     playerRadius: 0.28, ballRadius: 0.15,

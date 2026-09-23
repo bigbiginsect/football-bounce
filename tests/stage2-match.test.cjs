@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const { LocalMatch } = require('../.test-output/application/LocalMatch.js');
 const { prototypeConfig, freezeConfig, createStandardMatchState, detectGoal } =
   require('../.test-output/core/PrototypeConfig.js');
+const { createBoundaryWalls, isPlayablePosition } = require('../.test-output/core/BoundaryGeometry.js');
 
 const clone = value => structuredClone(value);
 const config = freezeConfig(prototypeConfig);
@@ -133,6 +134,61 @@ test('皮球必须整体越线且整体位于门柱之间，球门口不执行�
   const { releaseWallContact } = require('../.test-output/core/WallContact.js');
   assert.equal(releaseWallContact({ position: { x: 0, y: line - config.ballRadius },
     velocity: { x: 0, y: 0 } }, config.ballRadius, config), null);
+});
+
+test('上下球门两侧墙体从门线向外延伸，门柱前侧保留圆球的斜向通路', () => {
+  const walls = createBoundaryWalls(config);
+  const halfLine = config.fieldHeight / 2;
+  const halfOpening = config.goalWidth / 2;
+  const sideWalls = walls.filter(wall => wall.width === config.wallThickness
+    && wall.height === config.goalDepth + config.wallThickness);
+  assert.equal(sideWalls.length, 4);
+  for (const end of [-1, 1]) for (const side of [-1, 1]) {
+    const wall = sideWalls.find(item => Math.sign(item.x) === side && Math.sign(item.y) === end);
+    assert.ok(wall);
+    assert.equal(Math.abs(wall.y) - wall.height / 2, halfLine);
+    assert.equal(Math.abs(wall.x) - wall.width / 2, halfOpening);
+    // 斜向接近门柱时，该点离门柱角大于球半径，不能被侧壁提前挡住。
+    const x = side * (halfOpening - 0.12);
+    const y = end * (halfLine - 0.12);
+    const dx = Math.max(Math.abs(x - wall.x) - wall.width / 2, 0);
+    const dy = Math.max(Math.abs(y - wall.y) - wall.height / 2, 0);
+    assert.ok(Math.hypot(dx, dy) > config.ballRadius);
+  }
+});
+
+test('门柱角外侧的聚集球员位置合法，发射后继续运动而不误报异常换手', () => {
+  const { match, physics, launch } = setup();
+  const before = match.getSnapshot();
+  const target = before.players.find(player => player.ownerId === 'red');
+  const x = config.goalWidth / 2 - 0.2;
+  const y = config.fieldHeight / 2 - 0.2;
+  assert.ok(x > config.goalWidth / 2 - config.playerRadius + 0.04);
+  assert.ok(y > config.fieldHeight / 2 - config.playerRadius + 0.04);
+  assert.equal(isPlayablePosition({ x, y }, config.playerRadius, config), true);
+  physics.onStep = frame => {
+    frame.players.find(player => player.instanceId === target.instanceId).position = { x, y };
+  };
+  assert.equal(launch().ok, true);
+  fixedSteps(match, 1);
+  assert.equal(match.getSnapshot().phase, 'Simulating');
+  assert.equal(match.getSimulationStatus().reason, 'moving');
+  fixedSteps(match, 17);
+  assert.equal(match.getSimulationStatus().reason, 'stopped');
+  assert.equal(match.getSnapshot().turnNumber, before.turnNumber + 1);
+});
+
+test('门柱角内的真实墙体侵入及明显越界仍拒绝', () => {
+  const halfGoal = config.goalWidth / 2;
+  const halfLine = config.fieldHeight / 2;
+  for (const side of [-1, 1]) for (const end of [-1, 1]) {
+    assert.equal(isPlayablePosition({ x: side * (halfGoal - 0.2),
+      y: end * (halfLine - 0.2) }, config.playerRadius, config), true);
+    assert.equal(isPlayablePosition({ x: side * (halfGoal - 0.15),
+      y: end * (halfLine - 0.15) }, config.playerRadius, config), false);
+  }
+  assert.equal(isPlayablePosition({ x: config.fieldWidth, y: 0 }, config.playerRadius, config), false);
+  assert.equal(isPlayablePosition({ x: 0, y: halfLine + config.goalDepth }, config.playerRadius, config), false);
 });
 
 test('进球只加一分，全部恢复开局位置并由失球方行动', () => {

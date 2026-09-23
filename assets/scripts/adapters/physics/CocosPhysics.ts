@@ -6,6 +6,7 @@ import type { PhysicsPort, PhysicsFrame } from '../../core/PhysicsPort';
 import type { PrototypeConfig } from '../../core/PrototypeConfig';
 import { detectGoal } from '../../core/PrototypeConfig';
 import { releaseWallContact } from '../../core/WallContact';
+import { createBoundaryWalls } from '../../core/BoundaryGeometry';
 
 /** 物理根节点不参与 UI 缩放。位置为引擎单位，速度/冲量按 Box2D 的 SI 单位。 */
 export class CocosPhysics implements PhysicsPort {
@@ -25,24 +26,7 @@ export class CocosPhysics implements PhysicsPort {
         // 原型所有球员、球及墙使用 DEFAULT=1，同组相互碰撞。
         this.system.collisionMatrix[1] = 1;
         const c = config;
-        this.wall(-c.fieldWidth / 2 - c.wallThickness / 2, 0, c.wallThickness, c.fieldHeight + 2 * c.wallThickness);
-        this.wall(c.fieldWidth / 2 + c.wallThickness / 2, 0, c.wallThickness, c.fieldHeight + 2 * c.wallThickness);
-        const endSegment = (c.fieldWidth - c.goalWidth) / 2;
-        for (const side of [-1, 1]) {
-            const x = side * (c.goalWidth / 2 + endSegment / 2);
-            this.wall(x, -c.fieldHeight / 2 - c.wallThickness / 2, endSegment, c.wallThickness);
-            this.wall(x, c.fieldHeight / 2 + c.wallThickness / 2, endSegment, c.wallThickness);
-        }
-        for (const end of [-1, 1]) {
-            const lineY = end * c.fieldHeight / 2;
-            const goalY = lineY + end * c.goalDepth / 2;
-            for (const side of [-1, 1]) {
-                this.wall(side * (c.goalWidth / 2 + c.wallThickness / 2), goalY,
-                    c.wallThickness, c.goalDepth + c.wallThickness);
-            }
-            this.wall(0, lineY + end * (c.goalDepth + c.wallThickness / 2),
-                c.goalWidth + 2 * c.wallThickness, c.wallThickness);
-        }
+        for (const wall of createBoundaryWalls(c)) this.wall(wall.x, wall.y, wall.width, wall.height);
         for (const player of state.players) this.circle(player.instanceId, player, false);
         this.circle('ball', state.ball, true);
         this.restore(state);
