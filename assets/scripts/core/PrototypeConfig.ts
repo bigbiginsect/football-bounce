@@ -2,8 +2,9 @@ import type { GameState } from './GameState';
 
 /** 阶段 1 可调假设。修改后停止并重新运行预览；同时更改 version 便于记录。 */
 export const prototypeConfig = {
-    version: 'stage1-003',
+    version: 'stage2-001',
     fieldWidth: 6.8, fieldHeight: 10.5, wallThickness: 0.25,
+    goalWidth: 2.4, goalDepth: 0.6,
     playerRadius: 0.28, ballRadius: 0.15,
     playerMass: 2, ballMass: 0.45,
     playerDamping: 0.9, ballDamping: 0.5,
@@ -15,6 +16,7 @@ export const prototypeConfig = {
     wallReleaseGap: 0.04, wallContactTolerance: 0.015,
     fixedStep: 1 / 60, maxSubSteps: 5,
     stopSpeed: 0.02, quietSeconds: 0.3, maxSimulationSeconds: 15,
+    matchSeconds: 180, aimingSeconds: 20,
 } as const;
 export type PrototypeConfig = { readonly [K in keyof typeof prototypeConfig]:
     K extends 'version' ? string : number };
@@ -25,6 +27,7 @@ export function freezeConfig(input: unknown): PrototypeConfig {
     if (typeof data.version !== 'string' || !data.version.trim()) throw new Error('配置 version 不能为空');
     const limits: Record<Exclude<keyof PrototypeConfig, 'version'>, readonly [number, number]> = {
         fieldWidth: [6.8, 6.8], fieldHeight: [10.5, 10.5], wallThickness: [0.1, 1],
+        goalWidth: [1.2, 4], goalDepth: [0.3, 1.5],
         playerRadius: [0.1, 0.4], ballRadius: [0.08, 0.2], playerMass: [0.1, 10], ballMass: [0.1, 10],
         playerDamping: [0, 10], ballDamping: [0, 10], friction: [0, 1],
         playerRestitution: [0, 1], ballRestitution: [0, 1], wallRestitution: [0, 1],
@@ -35,6 +38,7 @@ export function freezeConfig(input: unknown): PrototypeConfig {
         wallReleaseGap: [0.02, 0.1], wallContactTolerance: [0.005, 0.03],
         maxSubSteps: [1, 10], stopSpeed: [0.001, 0.2], quietSeconds: [0.05, 2],
         maxSimulationSeconds: [0.1, 60],
+        matchSeconds: [10, 3600], aimingSeconds: [3, 120],
     };
     const result: Record<string, string | number> = { version: data.version };
     for (const key of Object.keys(limits) as (keyof typeof limits)[]) {
@@ -50,6 +54,10 @@ export function freezeConfig(input: unknown): PrototypeConfig {
     if (Number(data.wallReleaseGap) <= Number(data.wallContactTolerance)
         || Number(data.powerCircleMaxRadius) <= Number(data.playerRadius)) {
         throw new Error('贴墙释放间隙必须大于接触带，力度圆最大半径必须大于球员半径');
+    }
+    if (Number(data.goalWidth) + 2 * Number(data.playerRadius) >= Number(data.fieldWidth)
+        || Number(data.goalWidth) <= 2 * Number(data.ballRadius)) {
+        throw new Error('球门必须容纳皮球，并在两侧保留边界');
     }
     return Object.freeze(result) as PrototypeConfig;
 }
@@ -68,10 +76,59 @@ export function createPrototypeState(matchId: string, config: PrototypeConfig, f
             players.push({ ...body(x, y), instanceId: `b${i}`, templateId: 'prototype-player', ownerId: 'b' });
         }
     }
-    return { schemaVersion: 1, revision: 0, matchId, configVersion: config.version,
+    const kickoff = { players: players.map(p => ({ instanceId: p.instanceId, position: { ...p.position } })),
+        ballPosition: fixture === 'wall' || fixture === 'corner'
+            ? { x: config.fieldWidth / 2 - config.ballRadius,
+                y: fixture === 'corner' ? config.fieldHeight / 2 - config.ballRadius : 0 }
+            : { x: 0, y: -0.25 } };
+    return { schemaVersion: 2, revision: 0, matchId, modeId: 'practice', configVersion: config.version,
         turnNumber: 1, phase: 'Aiming', activeOperatorId: 'a',
-        clock: { elapsedMs: 0, remainingMs: 0 }, score: { a: 0, b: 0 },
+        clock: { matchDurationMs: config.matchSeconds * 1000, elapsedMs: 0,
+            remainingMs: config.matchSeconds * 1000, turnDurationMs: config.aimingSeconds * 1000,
+            turnRemainingMs: config.aimingSeconds * 1000 },
+        random: { seed: 1, state: 1, firstOperatorId: 'a' }, score: { a: 0, b: 0 },
         players, ball: fixture === 'wall' || fixture === 'corner'
             ? body(config.fieldWidth / 2 - config.ballRadius, fixture === 'corner' ? config.fieldHeight / 2 - config.ballRadius : 0)
-            : body(0, -0.25), result: null };
+            : body(0, -0.25), kickoff, result: null };
+}
+
+function nextRandomState(seed: number): number {
+    let value = seed >>> 0;
+    if (value === 0) value = 0x6d2b79f5;
+    value ^= value << 13; value ^= value >>> 17; value ^= value << 5;
+    return value >>> 0;
+}
+
+/** 标准模式比赛。种子由组合层注入，随机推进及先手决定留在纯规则层。 */
+export function createStandardMatchState(matchId: string, config: PrototypeConfig, seed: number): GameState {
+    if (!Number.isSafeInteger(seed) || seed < 0 || seed > 0xffffffff) throw new Error('随机种子必须是 uint32');
+    const normalizedSeed = (seed >>> 0) || 0x6d2b79f5;
+    const randomState = nextRandomState(normalizedSeed);
+    const firstOperatorId = randomState / 0x100000000 < 0.5 ? 'blue' : 'red';
+    const body = (x: number, y: number) => ({ position: { x, y }, velocity: { x: 0, y: 0 } });
+    // 临时对称开局坐标只用于阶段 2 可玩闭环；不命名或锁定为某种阵型。
+    const half = [[-1.6, -3.8], [1.6, -3.8], [0, -3], [-1.25, -2], [1.25, -2]] as const;
+    const players = [...half.map(([x, y], index) => ({ ...body(x, y), instanceId: `blue-${index + 1}`,
+        templateId: 'standard-player', ownerId: 'blue' })),
+    ...half.map(([x, y], index) => ({ ...body(-x, -y), instanceId: `red-${index + 1}`,
+        templateId: 'standard-player', ownerId: 'red' }))];
+    const kickoff = { players: players.map(p => ({ instanceId: p.instanceId, position: { ...p.position } })),
+        ballPosition: { x: 0, y: 0 } };
+    const matchDurationMs = config.matchSeconds * 1000;
+    const turnDurationMs = config.aimingSeconds * 1000;
+    return { schemaVersion: 2, revision: 0, matchId, modeId: 'standard', configVersion: config.version,
+        turnNumber: 1, phase: 'Aiming', activeOperatorId: firstOperatorId,
+        clock: { matchDurationMs, elapsedMs: 0, remainingMs: matchDurationMs,
+            turnDurationMs, turnRemainingMs: turnDurationMs },
+        random: { seed: normalizedSeed, state: randomState, firstOperatorId },
+        score: { blue: 0, red: 0 }, players, ball: body(0, 0), kickoff, result: null };
+}
+
+/** 返回进球队；要求皮球整体越线且整体位于两门柱之间。 */
+export function detectGoal(state: GameState, config: PrototypeConfig): 'blue' | 'red' | null {
+    const ball = state.ball; const halfLine = config.fieldHeight / 2;
+    if (Math.abs(ball.position.x) + config.ballRadius > config.goalWidth / 2 + 1e-9) return null;
+    if (ball.position.y - config.ballRadius >= halfLine - 1e-9) return 'blue';
+    if (ball.position.y + config.ballRadius <= -halfLine + 1e-9) return 'red';
+    return null;
 }

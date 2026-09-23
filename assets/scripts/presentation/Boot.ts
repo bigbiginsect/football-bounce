@@ -1,7 +1,7 @@
 import { _decorator, Component, EventTouch, input, Input, game, Game, view, ResolutionPolicy,
     Label, Node, UITransform } from 'cc';
 import { LocalMatch } from '../application/LocalMatch';
-import { createPrototypeState, freezeConfig, prototypeConfig, PrototypeConfig, Fixture } from '../core/PrototypeConfig';
+import { createStandardMatchState, freezeConfig, prototypeConfig, PrototypeConfig } from '../core/PrototypeConfig';
 import { LaunchGesture } from '../core/LaunchGesture';
 import { CocosPhysics } from '../adapters/physics/CocosPhysics';
 import { PrototypeView } from './PrototypeView';
@@ -17,7 +17,6 @@ export class Boot extends Component {
     private physics?: CocosPhysics;
     private screen?: PrototypeView;
     private gesture?: LaunchGesture;
-    private fixture: Fixture = 'normal';
     private commandSequence = 0;
     private paused = false;
     private background = false;
@@ -32,10 +31,6 @@ export class Boot extends Component {
             this.gesture = new LaunchGesture(this.config);
             this.screen = new PrototypeView(this.node, this.config, () => {
                 if (!this.gesture?.preview()) this.reset();
-            }, () => {
-                if (this.gesture?.preview()) return;
-                const fixtures: readonly Fixture[] = ['normal', 'dense', 'wall', 'corner'];
-                this.fixture = fixtures[(fixtures.indexOf(this.fixture) + 1) % fixtures.length]; this.reset();
             });
             this.reset(); this.listen();
         } catch (error) {
@@ -50,7 +45,9 @@ export class Boot extends Component {
     private reset(): void {
         this.gesture?.cancel(); this.physics?.dispose(); this.physics = undefined;
         // 会话 ID 来自组合层，规则核心不读取真实系统时间。
-        const state = createPrototypeState(`practice-${Date.now()}-${++sessionSequence}`, this.config, this.fixture);
+        const sequence = ++sessionSequence;
+        const seed = (Date.now() ^ Math.imul(sequence, 0x9e3779b9)) >>> 0;
+        const state = createStandardMatchState(`local-${Date.now()}-${sequence}`, this.config, seed);
         this.physics = new CocosPhysics(this.node.scene!, this.config, state);
         this.match = new LocalMatch(state, this.physics, this.config);
         this.message = ''; this.skipFrame = true; this.draw();
@@ -77,9 +74,10 @@ export class Boot extends Component {
         const launch = this.gesture?.end(id, this.screen.toField(event.getLocation()));
         if (!launch?.aim) return;
         const state = this.match.getSnapshot();
+        const operatorId = state.activeOperatorId;
         const result = this.match.execute({ type: 'Launch', commandId: `${state.matchId}-${++this.commandSequence}`,
-            matchId: state.matchId, turnNumber: state.turnNumber, operatorId: 'a', playerId: launch.playerId,
-            ...launch.aim }, 'a');
+            matchId: state.matchId, turnNumber: state.turnNumber, operatorId, playerId: launch.playerId,
+            ...launch.aim }, operatorId);
         this.message = result.ok ? '' : `操作被拒绝：${result.reason}`;
     };
     private readonly cancelTouch = (event: EventTouch): void => {
@@ -126,15 +124,27 @@ export class Boot extends Component {
     private draw(): void {
         if (!this.match || !this.screen) return;
         const state = this.match.getSnapshot(); const status = this.match.getSimulationStatus();
-        const gesture = this.gesture?.preview() ?? null;
-        const reasons = { ready: '拖动蓝色球员开始', moving: '运动中，请等待停止', stopped: '已停止，可以再次拖动',
-            timeout: '运动超时，已强制停止，可再次操作', invalid: '物理状态异常，已恢复发射前摆位' };
-        const title = this.paused ? '已暂停，回到画面按住蓝球继续'
-            : gesture ? `力度 ${Math.round((gesture.aim?.power ?? 0) * 100)}% · 松手发射` : reasons[status.reason];
-        const fixtureNames: Record<Fixture, string> = { normal: '普通', dense: '密集', wall: '贴墙', corner: '角落' };
+        let gesture = this.gesture?.preview() ?? null;
+        const selected = gesture && state.players.find(player => player.instanceId === gesture!.playerId);
+        if (gesture && (state.phase !== 'Aiming' || selected?.ownerId !== state.activeOperatorId)) {
+            this.gesture?.cancel(); gesture = null;
+        }
+        const side = state.activeOperatorId === 'blue' ? '蓝方' : '红方';
+        const reasons = { ready: `${side}行动`, moving: '运动中，请等待停止', stopped: `${side}行动`,
+            timeout: `运动超时，${side}行动`, invalid: `物理状态异常，${side}行动`,
+            goal: `进球！${side}开球`, 'turn-timeout': `瞄准超时，${side}行动`, finished: '比赛结束' };
+        const result = state.result?.winnerId === null ? '平局'
+            : state.result?.winnerId === 'blue' ? '蓝方获胜' : state.result ? '红方获胜' : '';
+        const title = this.paused ? '已暂停，回到画面继续'
+            : state.phase === 'Finished' ? `比赛结束 · ${result}`
+                : gesture ? `力度 ${Math.round((gesture.aim?.power ?? 0) * 100)}% · 松手发射` : reasons[status.reason];
+        const seconds = Math.ceil(state.clock.remainingMs / 1000);
+        const turnSeconds = Math.ceil(state.clock.turnRemainingMs / 1000);
         this.screen.render(state, gesture, this.message || title,
-            `${fixtureNames[this.fixture]}摆位 · 第 ${state.turnNumber} 次操作 · 模拟 ${status.seconds.toFixed(2)} 秒\n`
-            + `蓝色：己方　红色：对方　白色：皮球${status.droppedSeconds > 0.01 ? ' · 卡顿已限步' : ''}`);
+            `蓝 ${state.score.blue ?? 0} : ${state.score.red ?? 0} 红　比赛 ${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`
+            + `${state.phase === 'Aiming' ? `　回合 ${turnSeconds} 秒` : ''}\n`
+            + `第 ${state.turnNumber} 回合 · 先手 ${state.random.firstOperatorId === 'blue' ? '蓝方' : '红方'}`
+            + `${status.droppedSeconds > 0.01 ? ' · 卡顿已限步' : ''}`);
     }
     onDestroy(): void { this.physics?.dispose(); this.screen?.dispose(); }
 }

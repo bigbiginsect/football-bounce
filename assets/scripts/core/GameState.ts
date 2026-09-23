@@ -10,17 +10,34 @@ export interface PlayerState extends BodyState {
     readonly ownerId: string;
 }
 export type MatchPhase = 'Aiming' | 'Simulating' | 'Resolving' | 'Finished';
+export interface KickoffState {
+    readonly players: readonly { readonly instanceId: string; readonly position: Vector2Data }[];
+    readonly ballPosition: Vector2Data;
+}
 export interface GameState {
-    readonly schemaVersion: 1;
+    readonly schemaVersion: 2;
     readonly revision: number;
     readonly matchId: string;
+    readonly modeId: string;
     readonly configVersion: string;
     readonly turnNumber: number;
     readonly phase: MatchPhase;
     readonly activeOperatorId: string;
-    readonly clock: { readonly elapsedMs: number; readonly remainingMs: number };
+    readonly clock: {
+        readonly matchDurationMs: number;
+        readonly elapsedMs: number;
+        readonly remainingMs: number;
+        readonly turnDurationMs: number;
+        readonly turnRemainingMs: number;
+    };
+    readonly random: {
+        readonly seed: number;
+        readonly state: number;
+        readonly firstOperatorId: string;
+    };
     readonly score: Readonly<Record<string, number>>;
     readonly players: readonly PlayerState[];
     readonly ball: BodyState;
-    readonly result: null | { readonly winnerId: string | null };
+    readonly kickoff: KickoffState;
+    readonly result: null | { readonly winnerId: string | null; readonly reason: 'TimeExpired' };
 }

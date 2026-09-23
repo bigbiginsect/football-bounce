@@ -16,6 +16,8 @@ export function releaseWallContact(body: BodyState, radius: number, config: Prot
         return Math.sign(coordinate) * (limit - config.wallReleaseGap);
     };
     const x = release(position.x, velocity.x, config.fieldWidth);
-    const y = release(position.y, velocity.y, config.fieldHeight);
+    // 球门口没有端线墙；进入球门通道时不能被阶段 1 的贴墙释放逻辑推回场内。
+    const inGoalOpening = Math.abs(position.x) + radius <= config.goalWidth / 2 + config.wallContactTolerance;
+    const y = inGoalOpening ? position.y : release(position.y, velocity.y, config.fieldHeight);
     return x === position.x && y === position.y ? null : { x, y };
 }

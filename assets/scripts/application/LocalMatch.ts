@@ -2,11 +2,12 @@ import type { Command } from '../core/Command';
 import type { GameState } from '../core/GameState';
 import { validateCommand, Rejection } from '../core/validateCommand';
 import type { PhysicsFrame, PhysicsPort } from '../core/PhysicsPort';
-import { freezeConfig, PrototypeConfig } from '../core/PrototypeConfig';
+import { detectGoal, freezeConfig, PrototypeConfig } from '../core/PrototypeConfig';
 
 function copy<T>(value: T): T { return JSON.parse(JSON.stringify(value)) as T; }
 export type CommandResult = { readonly ok: true; readonly revision: number }
     | { readonly ok: false; readonly reason: Rejection };
+type EndReason = 'ready' | 'moving' | 'stopped' | 'timeout' | 'invalid' | 'goal' | 'turn-timeout' | 'finished';
 
 /** 本地权威入口。初始状态由可信应用配置创建，不能直接传入网络载荷。 */
 export class LocalMatch {
@@ -20,7 +21,7 @@ export class LocalMatch {
     private steps = 0;
     private quietSteps = 0;
     private droppedSeconds = 0;
-    private endReason: 'ready' | 'moving' | 'stopped' | 'timeout' | 'invalid' = 'ready';
+    private endReason: EndReason = 'ready';
 
     constructor(initialState: GameState, private readonly physics?: PhysicsPort, config?: PrototypeConfig) {
         this.state = copy(initialState);
@@ -37,13 +38,18 @@ export class LocalMatch {
         return { reason: this.endReason, seconds: this.steps * (this.config?.fixedStep ?? 0),
             droppedSeconds: this.droppedSeconds };
     }
-    /** 生命周期暂停只丢弃积压；正式比赛时钟尚未实现。 */
+    /** 生命周期暂停时不调用 advance；这里只丢弃物理积压，恢复首帧不补后台时间。 */
     discardAccumulatedTime(): void { this.accumulator = 0; }
 
     advance(deltaSeconds: number): void {
-        const config = this.config; const physics = this.physics;
-        if (!config || !physics || this.state.phase !== 'Simulating') return;
-        if (!Number.isFinite(deltaSeconds) || deltaSeconds < 0) return;
+        const config = this.config;
+        if (!config || this.state.phase === 'Finished' || !Number.isFinite(deltaSeconds) || deltaSeconds < 0) return;
+        if (this.state.phase === 'Aiming') {
+            this.advanceAiming(deltaSeconds * 1000);
+            return;
+        }
+        if (this.state.phase !== 'Simulating' || !this.physics) return;
+        this.advanceMatchClock(deltaSeconds * 1000);
         const cap = config.fixedStep * config.maxSubSteps;
         const pending = this.accumulator + deltaSeconds;
         this.accumulator = Math.min(pending, cap);
@@ -51,25 +57,56 @@ export class LocalMatch {
         for (let i = 0; i < config.maxSubSteps && this.accumulator + 1e-10 >= config.fixedStep; i++) {
             this.accumulator = Math.max(0, this.accumulator - config.fixedStep);
             try {
-                physics.step(config.fixedStep); this.steps++;
-                const frame = physics.sample();
-                if (!this.validFrame(frame)) { this.finish('invalid'); break; }
+                this.physics.step(config.fixedStep); this.steps++;
+                const frame = this.physics.sample();
+                if (!this.validFrame(frame)) { this.finishSimulation('invalid'); break; }
                 this.state = { ...this.state, revision: this.state.revision + 1,
                     players: this.state.players.map(player => ({ ...player,
                         ...copy(frame.players.find(p => p.instanceId === player.instanceId)!) })),
                     ball: copy(frame.ball) };
+                const scorer = detectGoal(this.state, config);
+                if (scorer) { this.finishSimulation('goal', scorer); break; }
                 const quiet = [...frame.players, frame.ball].every(b => Math.hypot(b.velocity.x, b.velocity.y) <= config.stopSpeed);
                 this.quietSteps = quiet ? this.quietSteps + 1 : 0;
                 if (this.quietSteps >= Math.ceil(config.quietSeconds / config.fixedStep - 1e-9)) {
-                    this.finish('stopped'); break;
+                    this.finishSimulation('stopped'); break;
                 }
                 if (this.steps >= Math.ceil(config.maxSimulationSeconds / config.fixedStep - 1e-9)) {
-                    this.finish('timeout'); break;
+                    this.finishSimulation('timeout'); break;
                 }
             } catch {
-                this.finish('invalid'); break;
+                this.finishSimulation('invalid'); break;
             }
         }
+    }
+
+    private advanceAiming(milliseconds: number): void {
+        let pending = milliseconds;
+        while (pending > 1e-9 && this.state.phase === 'Aiming') {
+            const step = Math.min(pending, this.state.clock.remainingMs, this.state.clock.turnRemainingMs);
+            if (step > 0) {
+                this.state = { ...this.state, revision: this.state.revision + 1, clock: { ...this.state.clock,
+                    elapsedMs: this.state.clock.elapsedMs + step,
+                    remainingMs: Math.max(0, this.state.clock.remainingMs - step),
+                    turnRemainingMs: Math.max(0, this.state.clock.turnRemainingMs - step) } };
+                pending -= step;
+            }
+            if (this.state.clock.remainingMs <= 1e-9) {
+                this.finishMatch();
+            } else if (this.state.clock.turnRemainingMs <= 1e-9) {
+                this.changeTurn('turn-timeout');
+            } else {
+                break;
+            }
+        }
+    }
+
+    private advanceMatchClock(milliseconds: number): void {
+        const step = Math.min(milliseconds, this.state.clock.remainingMs);
+        if (step <= 0) return;
+        this.state = { ...this.state, revision: this.state.revision + 1, clock: { ...this.state.clock,
+            elapsedMs: this.state.clock.elapsedMs + step,
+            remainingMs: Math.max(0, this.state.clock.remainingMs - step) } };
     }
 
     private validFrame(frame: PhysicsFrame): boolean {
@@ -80,25 +117,77 @@ export class LocalMatch {
         return [...frame.players.map(p => ({ body: p, radius: config.playerRadius })),
             { body: frame.ball, radius: config.ballRadius }].every(({ body, radius }) => {
             const { position: p, velocity: v } = body;
-            // 允许 Box2D 接触求解的少量穿入误差；完全越界或非有限值必须恢复。
-            return [p.x, p.y, v.x, v.y].every(Number.isFinite)
-                && Math.abs(p.x) <= config.fieldWidth / 2 - radius + 0.04
-                && Math.abs(p.y) <= config.fieldHeight / 2 - radius + 0.04
-                && Math.hypot(v.x, v.y) <= config.maxSpeed + 1e-6;
+            const finite = [p.x, p.y, v.x, v.y].every(Number.isFinite);
+            const withinPitch = Math.abs(p.x) <= config.fieldWidth / 2 - radius + 0.04
+                && Math.abs(p.y) <= config.fieldHeight / 2 - radius + 0.04;
+            const withinGoal = Math.abs(p.x) <= config.goalWidth / 2 - radius + 0.04
+                && Math.abs(p.y) >= config.fieldHeight / 2 - radius - 0.04
+                && Math.abs(p.y) <= config.fieldHeight / 2 + config.goalDepth - radius + 0.04;
+            return finite && (withinPitch || withinGoal) && Math.hypot(v.x, v.y) <= config.maxSpeed + 1e-6;
         });
     }
 
-    private finish(reason: 'stopped' | 'timeout' | 'invalid'): void {
-        const source = reason === 'invalid' ? this.beforeLaunch! : this.state;
+    private finishSimulation(reason: 'stopped' | 'timeout' | 'invalid' | 'goal', scorer?: string): void {
+        const bodySource = reason === 'invalid' ? this.beforeLaunch! : this.state;
         const zero = { x: 0, y: 0 };
-        this.state = { ...source, revision: this.state.revision + 1, phase: 'Resolving',
-            players: source.players.map(p => ({ ...p, velocity: { ...zero } })),
-            ball: { ...source.ball, velocity: { ...zero } } };
+        this.state = { ...this.state, revision: this.state.revision + 1, phase: 'Resolving',
+            players: bodySource.players.map(p => ({ ...p, velocity: { ...zero } })),
+            ball: { ...bodySource.ball, velocity: { ...zero } } };
         this.physics!.stop(); this.physics!.restore(this.state);
         this.recordSnapshot();
-        this.state = { ...this.state, revision: this.state.revision + 1,
-            phase: 'Aiming', turnNumber: this.state.turnNumber + 1 };
-        this.endReason = reason; this.accumulator = 0; this.acceptedIds.clear();
+        if (scorer) {
+            this.state = { ...this.state, revision: this.state.revision + 1,
+                score: { ...this.state.score, [scorer]: (this.state.score[scorer] ?? 0) + 1 } };
+        }
+        this.endReason = reason;
+        this.accumulator = 0;
+        if (this.state.clock.remainingMs <= 1e-9) {
+            this.finishMatch();
+        } else if (scorer) {
+            this.resetAfterGoal(this.otherOperator(scorer));
+        } else {
+            this.changeTurn(reason);
+        }
+    }
+
+    private resetAfterGoal(concedingOperatorId: string): void {
+        const zero = { x: 0, y: 0 };
+        this.state = { ...this.state, revision: this.state.revision + 1, phase: 'Aiming',
+            turnNumber: this.state.turnNumber + 1, activeOperatorId: concedingOperatorId,
+            clock: { ...this.state.clock, turnRemainingMs: this.state.clock.turnDurationMs },
+            players: this.state.players.map(player => {
+                const kickoff = this.state.kickoff.players.find(p => p.instanceId === player.instanceId);
+                if (!kickoff) throw new Error(`缺少开局位置：${player.instanceId}`);
+                return { ...player, position: { ...kickoff.position }, velocity: { ...zero } };
+            }),
+            ball: { position: { ...this.state.kickoff.ballPosition }, velocity: { ...zero } } };
+        this.physics!.restore(this.state);
+        this.recordSnapshot();
+    }
+
+    private changeTurn(reason: Exclude<EndReason, 'ready' | 'moving' | 'goal' | 'finished'>): void {
+        this.state = { ...this.state, revision: this.state.revision + 1, phase: 'Aiming',
+            turnNumber: this.state.turnNumber + 1,
+            activeOperatorId: this.otherOperator(this.state.activeOperatorId),
+            clock: { ...this.state.clock, turnRemainingMs: this.state.clock.turnDurationMs } };
+        this.endReason = reason;
+        this.recordSnapshot();
+    }
+
+    private otherOperator(operatorId: string): string {
+        const owners = [...new Set(this.state.players.map(player => player.ownerId))];
+        return owners.find(owner => owner !== operatorId) ?? operatorId;
+    }
+
+    private finishMatch(): void {
+        const owners = [...new Set(this.state.players.map(player => player.ownerId))];
+        const first = owners[0]; const second = owners[1];
+        const firstScore = this.state.score[first] ?? 0; const secondScore = this.state.score[second] ?? 0;
+        const winnerId = firstScore === secondScore ? null : firstScore > secondScore ? first : second;
+        this.state = { ...this.state, revision: this.state.revision + 1, phase: 'Finished',
+            clock: { ...this.state.clock, remainingMs: 0, turnRemainingMs: 0 },
+            result: { winnerId, reason: 'TimeExpired' } };
+        this.endReason = 'finished'; this.accumulator = 0;
         this.recordSnapshot();
     }
 
@@ -110,7 +199,6 @@ export class LocalMatch {
     execute(input: unknown, sessionOperatorId: string): CommandResult {
         const checked = validateCommand(this.state, input, sessionOperatorId, this.acceptedIds);
         if (!checked.ok) return checked;
-        // 只记录协议字段，丢弃调用方额外载荷（含非 JSON 对象/自报比分）。
         const c = checked.command;
         const command: Command = {
             type: c.type, commandId: c.commandId, matchId: c.matchId,
@@ -122,11 +210,14 @@ export class LocalMatch {
         this.state = { ...this.state, revision: this.state.revision + 1, phase: 'Simulating' };
         this.acceptedIds.add(command.commandId);
         this.commands.push(command);
-        if (this.commands.length > 100) this.commands.shift();
+        if (this.commands.length > 100) {
+            const removed = this.commands.shift();
+            if (removed) this.acceptedIds.delete(removed.commandId);
+        }
         this.accumulator = 0; this.steps = 0; this.quietSteps = 0; this.droppedSeconds = 0;
         this.endReason = 'moving';
         if (this.physics) {
-            try { this.physics.launch(command); } catch { this.finish('invalid'); }
+            try { this.physics.launch(command); } catch { this.finishSimulation('invalid'); }
         }
         this.recordSnapshot();
         return { ok: true, revision: this.state.revision };

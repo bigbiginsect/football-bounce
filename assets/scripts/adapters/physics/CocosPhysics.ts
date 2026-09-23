@@ -26,8 +26,22 @@ export class CocosPhysics implements PhysicsPort {
         const c = config;
         this.wall(-c.fieldWidth / 2 - c.wallThickness / 2, 0, c.wallThickness, c.fieldHeight + 2 * c.wallThickness);
         this.wall(c.fieldWidth / 2 + c.wallThickness / 2, 0, c.wallThickness, c.fieldHeight + 2 * c.wallThickness);
-        this.wall(0, -c.fieldHeight / 2 - c.wallThickness / 2, c.fieldWidth, c.wallThickness);
-        this.wall(0, c.fieldHeight / 2 + c.wallThickness / 2, c.fieldWidth, c.wallThickness);
+        const endSegment = (c.fieldWidth - c.goalWidth) / 2;
+        for (const side of [-1, 1]) {
+            const x = side * (c.goalWidth / 2 + endSegment / 2);
+            this.wall(x, -c.fieldHeight / 2 - c.wallThickness / 2, endSegment, c.wallThickness);
+            this.wall(x, c.fieldHeight / 2 + c.wallThickness / 2, endSegment, c.wallThickness);
+        }
+        for (const end of [-1, 1]) {
+            const lineY = end * c.fieldHeight / 2;
+            const goalY = lineY + end * c.goalDepth / 2;
+            for (const side of [-1, 1]) {
+                this.wall(side * (c.goalWidth / 2 + c.wallThickness / 2), goalY,
+                    c.wallThickness, c.goalDepth + c.wallThickness);
+            }
+            this.wall(0, lineY + end * (c.goalDepth + c.wallThickness / 2),
+                c.goalWidth + 2 * c.wallThickness, c.wallThickness);
+        }
         for (const player of state.players) this.circle(player.instanceId, player, false);
         this.circle('ball', state.ball, true);
         this.restore(state);

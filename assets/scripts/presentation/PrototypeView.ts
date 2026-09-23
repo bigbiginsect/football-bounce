@@ -15,20 +15,27 @@ export class PrototypeView {
     private readonly status: Label;
     private readonly info: Label;
 
-    constructor(parent: Node, private readonly config: PrototypeConfig, reset: () => void, toggle: () => void) {
+    constructor(parent: Node, private readonly config: PrototypeConfig, restart: () => void) {
         const camera = parent.getComponent(Canvas)?.cameraComponent;
         if (!camera) throw new Error('球场视图需要 Canvas 的渲染相机');
         this.camera = camera;
-        this.root = this.node(parent, 'Prototype', 720, 1280);
-        this.label(this.root, '足球弹弹乐 · 发射练习', 575, 30);
-        this.label(this.root, '蓝色由你操控 · 向后拖动，向前发射', 532, 21);
+        this.root = this.node(parent, 'Match', 720, 1280);
+        this.label(this.root, '足球弹弹乐 · 本地双人', 575, 30);
+        this.label(this.root, '轮到哪一方，就拖动该方球员反向发射', 532, 21);
         const field = this.node(this.root, 'Field', config.fieldWidth * pixelsPerMeter, config.fieldHeight * pixelsPerMeter);
         this.field = field.getComponent(UITransform)!;
         const g = field.addComponent(Graphics);
         const w = config.fieldWidth * pixelsPerMeter; const h = config.fieldHeight * pixelsPerMeter;
         g.fillColor = new Color(24, 85, 62); g.rect(-w / 2, -h / 2, w, h); g.fill();
         g.strokeColor = new Color(180, 219, 190); g.lineWidth = 3;
-        g.rect(-w / 2, -h / 2, w, h); g.moveTo(-w / 2, 0); g.lineTo(w / 2, 0); g.stroke();
+        const goalWidth = config.goalWidth * pixelsPerMeter;
+        const goalDepth = config.goalDepth * pixelsPerMeter;
+        g.rect(-goalWidth / 2, h / 2, goalWidth, goalDepth);
+        g.rect(-goalWidth / 2, -h / 2 - goalDepth, goalWidth, goalDepth);
+        g.moveTo(-w / 2, -h / 2); g.lineTo(-w / 2, h / 2); g.lineTo(-goalWidth / 2, h / 2);
+        g.moveTo(goalWidth / 2, h / 2); g.lineTo(w / 2, h / 2); g.lineTo(w / 2, -h / 2);
+        g.lineTo(goalWidth / 2, -h / 2); g.moveTo(-goalWidth / 2, -h / 2); g.lineTo(-w / 2, -h / 2);
+        g.moveTo(-w / 2, 0); g.lineTo(w / 2, 0); g.stroke();
         g.circle(0, 0, 72); g.stroke();
         g.rect(-120, -h / 2, 240, 115); g.rect(-120, h / 2 - 115, 240, 115); g.stroke();
         this.powerCircle = this.node(field, 'PowerCircle', w, h).addComponent(Graphics);
@@ -36,8 +43,8 @@ export class PrototypeView {
         this.aim = this.node(field, 'Aim', w, h).addComponent(Graphics);
         this.status = this.label(this.root, '', 470, 22);
         this.info = this.label(this.root, '', -473, 20);
-        this.button('重置摆位', -150, reset); this.button('切换测试摆位', 150, toggle);
-        this.label(this.root, `${config.version} · 封闭球场，暂不计分或换手`, -612, 17);
+        this.button('重新开始', 0, restart);
+        this.label(this.root, `${config.version} · 标准模式 3 分钟 · 每队 5 人`, -612, 17);
     }
     private node(parent: Node, name: string, width: number, height: number): Node {
         const node = new Node(name); node.layer = parent.layer; parent.addChild(node);
@@ -67,9 +74,10 @@ export class PrototypeView {
     render(state: GameState, gesture: ReturnType<LaunchGesture['preview']>, status: string, info: string): void {
         const g = this.bodies; g.clear();
         for (const player of state.players) {
-            g.fillColor = player.ownerId === state.activeOperatorId ? new Color(68, 167, 255) : new Color(245, 105, 102);
+            g.fillColor = player.ownerId === 'blue' ? new Color(68, 167, 255) : new Color(245, 105, 102);
             g.circle(player.position.x * pixelsPerMeter, player.position.y * pixelsPerMeter, this.config.playerRadius * pixelsPerMeter); g.fill();
-            g.strokeColor = Color.WHITE; g.lineWidth = 2; g.stroke();
+            g.strokeColor = player.ownerId === state.activeOperatorId ? new Color(255, 220, 90) : Color.WHITE;
+            g.lineWidth = player.ownerId === state.activeOperatorId ? 4 : 2; g.stroke();
         }
         g.fillColor = Color.WHITE; g.circle(state.ball.position.x * pixelsPerMeter, state.ball.position.y * pixelsPerMeter,
             this.config.ballRadius * pixelsPerMeter); g.fill();
