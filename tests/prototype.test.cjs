@@ -6,20 +6,26 @@ const { mapDrag, LaunchGesture } = require('../.test-output/core/LaunchGesture.j
 const { releaseWallContact } = require('../.test-output/core/WallContact.js');
 const clone = value => structuredClone(value);
 const config = freezeConfig(prototypeConfig);
-const command = (state, overrides = {}) => ({ type: 'Launch', commandId: 'c1', matchId: state.matchId,
-  turnNumber: state.turnNumber, operatorId: 'a', playerId: 'a1', direction: { x: 0, y: 1 }, power: 1, ...overrides });
+const command = (state, overrides = {}) => {
+  const operatorId = state.activeOperatorId;
+  const playerId = state.players.find(player => player.ownerId === operatorId).instanceId;
+  return { type: 'Launch', commandId: `c${state.turnNumber}`, matchId: state.matchId,
+    turnNumber: state.turnNumber, operatorId, playerId, direction: { x: 0, y: 1 }, power: 1, ...overrides };
+};
 class FakePhysics {
   launches = []; steps = []; stops = 0; onStep = () => {};
   restore(state) { this.frame = clone({ players: state.players, ball: state.ball }); }
   launch(input) { this.launches.push(clone(input)); }
   step(dt) { this.steps.push(dt); this.onStep(this.frame, this.steps.length); }
-  sample() { return clone(this.frame); }
+  sample() { return { ...clone(this.frame), goal: null }; }
   stop() { this.stops++; }
 }
 function setup(overrides = {}, fixture = 'normal', id = 'practice') {
   const c = freezeConfig({ ...config, ...overrides }); const state = createPrototypeState(id, c, fixture);
   const physics = new FakePhysics(); const match = new LocalMatch(state, physics, c);
-  return { c, state, physics, match, launch: () => match.execute(command(match.getSnapshot()), 'a') };
+  return { c, state, physics, match, launch: () => {
+    const current = match.getSnapshot(); return match.execute(command(current), current.activeOperatorId);
+  } };
 }
 function steps(match, count, dt = config.fixedStep) { for (let i = 0; i < count; i++) match.advance(dt); }
 

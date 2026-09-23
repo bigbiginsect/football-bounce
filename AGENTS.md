@@ -9,7 +9,7 @@
 - 球员是主要可扩展数据资产：稳定 ID、重量、力度、精度（辅助瞄准线长度）。属性及映射公式配置化；技能仅预留 ID/参数扩展入口，具体效果待定。
 - 最终交付：可下载安装的 Android `.apk`，支持两台 Android 手机在同一局域网对战。先完成本地双人核心闭环，再接入联网；本地可玩不代表最终交付完成。
 - 当前只预留联机与服务器边界，不规划具体后端框架、部署、房间发现或同步协议，也不提前实现账号、匹配、商城等系统。
-- 已确定竖屏、拖动方向与发射方向相反，球场采用标准足球场比例（按长:宽 = 105:68 落实）；阶段 1 已于 2026-09-21 经用户试玩确认关闭（[验收结论](worklogs/2026-09-20-stage1-launch-physics/requirement-gap.md)），当前配置 stage1-003；物理参数集中配置并保留后续调试入口，详见 [阶段 1 需求差距](worklogs/2026-09-20-stage1-launch-physics/requirement-gap.md)。局时数值、每队人数、先手、平局、单回合超时、计时是否覆盖物理阶段、到时仍在运动的处理、进球判定与复位规则仍未定。实现相关功能前写入 `requirement-gap.md`；临时参数须标明假设且可配置，不把假设写成既定需求。
+- 已确定竖屏、拖动方向与发射方向相反，球场采用标准足球场比例（按长:宽 = 105:68 落实）；阶段 1 已于 2026-09-21 经用户试玩确认关闭（[验收结论](worklogs/2026-09-20-stage1-launch-physics/requirement-gap.md)），物理手感沿用 stage1-003 基线。阶段 2 已于 2026-09-23 经用户试玩确认关闭，stage2-001 为当前交付基线：标准模式 3 分钟、每队 5 人、规则层按种子随机先手、20 秒瞄准超时换手、比赛计时覆盖瞄准与运动、运动中到时待本次结算、平局不加时、皮球整体越过门柱间门线才进球、进球后复位且失球方行动、重开新比赛并重新随机。5 人的前锋/中场/后卫分配属于未来玩家选择的阵型（如 2-2-1、1-2-2），阶段 2 未固定配额或实现阵型系统。详见 [阶段 2 验收结论](worklogs/2026-09-22-stage2-local-match/requirement-gap.md)。临时参数须标明假设且可配置，不把假设写成既定需求。
 
 ## 2. Command / GameState 边界
 
@@ -28,12 +28,12 @@
 
 | 项目 | 已核实状态 |
 | --- | --- |
-| 工作目录 | `D:\tantanle`；已导入 Creator 3.8.8 正式 Empty(2D) 工程，启动场景 `assets/scenes/Boot.scene`，分层脚本与项目测试已建立 |
+| 工作目录 | `D:\GameProjects\football-bounce-git`；已迁移 Creator 3.8.8 正式 Empty(2D) 工程，启动场景 `assets/scenes/Boot.scene`，分层脚本与项目测试已建立 |
 | 系统与终端 | Windows，系统版本 `10.0.22631`；PowerShell `7.6.6` |
 | Git | `2.51.1.windows.1`，位于 `D:\Git\cmd\git.exe` |
-| Creator | `D:\cocos\editor\Creator\3.8.8\CocosCreator.exe`，可执行文件产品版本确认为 `3.8.8` |
+| Creator | 2026-09-20 旧环境曾核实 `D:\cocos\editor\Creator\3.8.8\CocosCreator.exe` 为 3.8.8；2026-09-23 迁移后用户已实际运行 stage2-001 并反馈“可以玩”，工程也已生成 Creator 类型声明，但新可执行文件位置尚未核实，不能沿用旧路径 |
 | Dashboard | `D:\cocos\CocosDashboard\CocosDashboard.exe` 存在 |
-| Node.js / npm | 已安装 Node.js `22.23.2` / npm `10.9.8`，用户目录 `%LOCALAPPDATA%\Programs\NodeJS\node-v22.23.2-win-x64` 已加入用户 PATH；重启终端/宿主应用后生效 |
+| Node.js / npm | 2026-09-20 旧环境曾核实 Node.js `22.23.2` / npm `10.9.8`；2026-09-23 迁移后的当前会话中原用户目录不存在且 `npm.cmd` 不在 PATH。本批仅用 Codex 随附 Node 24.19.0 / pnpm 安装锁定的 TypeScript 5.9.3 并执行检查，不等于项目环境已重新验收 |
 | 运行预览 | Creator 3.8.8 编辑器内运行预览已实测通过（含停止后再次运行）；Edge 153.0.4234.32 保留为可选调试工具 |
 | Android 工具链 | 2026-09-20 用户明确延期，本机不补齐 JDK、SDK/NDK、Gradle、adb 或 Android 模拟器 |
 

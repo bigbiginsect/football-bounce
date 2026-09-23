@@ -1,6 +1,6 @@
 import type { GameState } from './GameState';
 
-/** 阶段 1 可调假设。修改后停止并重新运行预览；同时更改 version 便于记录。 */
+/** 阶段 1 物理基线与阶段 2 标准模式参数。修改后停止并重新运行预览，同时更新 version。 */
 export const prototypeConfig = {
     version: 'stage2-001',
     fieldWidth: 6.8, fieldHeight: 10.5, wallThickness: 0.25,
@@ -93,10 +93,14 @@ export function createPrototypeState(matchId: string, config: PrototypeConfig, f
 }
 
 function nextRandomState(seed: number): number {
-    let value = seed >>> 0;
-    if (value === 0) value = 0x6d2b79f5;
-    value ^= value << 13; value ^= value >>> 17; value ^= value << 5;
-    return value >>> 0;
+    return (seed + 0x6d2b79f5) >>> 0;
+}
+
+function randomValue(state: number): number {
+    let value = state;
+    value = Math.imul(value ^ (value >>> 15), value | 1);
+    value ^= value + Math.imul(value ^ (value >>> 7), value | 61);
+    return ((value ^ (value >>> 14)) >>> 0) / 0x100000000;
 }
 
 /** 标准模式比赛。种子由组合层注入，随机推进及先手决定留在纯规则层。 */
@@ -104,13 +108,13 @@ export function createStandardMatchState(matchId: string, config: PrototypeConfi
     if (!Number.isSafeInteger(seed) || seed < 0 || seed > 0xffffffff) throw new Error('随机种子必须是 uint32');
     const normalizedSeed = (seed >>> 0) || 0x6d2b79f5;
     const randomState = nextRandomState(normalizedSeed);
-    const firstOperatorId = randomState / 0x100000000 < 0.5 ? 'blue' : 'red';
+    const firstOperatorId = randomValue(randomState) < 0.5 ? 'blue' : 'red';
     const body = (x: number, y: number) => ({ position: { x, y }, velocity: { x: 0, y: 0 } });
     // 临时对称开局坐标只用于阶段 2 可玩闭环；不命名或锁定为某种阵型。
     const half = [[-1.6, -3.8], [1.6, -3.8], [0, -3], [-1.25, -2], [1.25, -2]] as const;
     const players = [...half.map(([x, y], index) => ({ ...body(x, y), instanceId: `blue-${index + 1}`,
         templateId: 'standard-player', ownerId: 'blue' })),
-    ...half.map(([x, y], index) => ({ ...body(-x, -y), instanceId: `red-${index + 1}`,
+    ...half.map(([x, y], index) => ({ ...body(x === 0 ? 0 : -x, -y), instanceId: `red-${index + 1}`,
         templateId: 'standard-player', ownerId: 'red' }))];
     const kickoff = { players: players.map(p => ({ instanceId: p.instanceId, position: { ...p.position } })),
         ballPosition: { x: 0, y: 0 } };
@@ -125,7 +129,7 @@ export function createStandardMatchState(matchId: string, config: PrototypeConfi
 }
 
 /** 返回进球队；要求皮球整体越线且整体位于两门柱之间。 */
-export function detectGoal(state: GameState, config: PrototypeConfig): 'blue' | 'red' | null {
+export function detectGoal(state: Pick<GameState, 'ball'>, config: PrototypeConfig): 'blue' | 'red' | null {
     const ball = state.ball; const halfLine = config.fieldHeight / 2;
     if (Math.abs(ball.position.x) + config.ballRadius > config.goalWidth / 2 + 1e-9) return null;
     if (ball.position.y - config.ballRadius >= halfLine - 1e-9) return 'blue';

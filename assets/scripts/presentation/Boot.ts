@@ -140,8 +140,10 @@ export class Boot extends Component {
                 : gesture ? `力度 ${Math.round((gesture.aim?.power ?? 0) * 100)}% · 松手发射` : reasons[status.reason];
         const seconds = Math.ceil(state.clock.remainingMs / 1000);
         const turnSeconds = Math.ceil(state.clock.turnRemainingMs / 1000);
+        const secondPart = seconds % 60;
+        const secondText = secondPart < 10 ? `0${secondPart}` : String(secondPart);
         this.screen.render(state, gesture, this.message || title,
-            `蓝 ${state.score.blue ?? 0} : ${state.score.red ?? 0} 红　比赛 ${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`
+            `蓝 ${state.score.blue ?? 0} : ${state.score.red ?? 0} 红　比赛 ${Math.floor(seconds / 60)}:${secondText}`
             + `${state.phase === 'Aiming' ? `　回合 ${turnSeconds} 秒` : ''}\n`
             + `第 ${state.turnNumber} 回合 · 先手 ${state.random.firstOperatorId === 'blue' ? '蓝方' : '红方'}`
             + `${status.droppedSeconds > 0.01 ? ' · 卡顿已限步' : ''}`);

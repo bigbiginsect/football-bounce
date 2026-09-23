@@ -39,7 +39,7 @@ const config = freezeConfig(prototypeConfig);
 function setup() {
   const boot = new Boot(); boot.config = config; boot.gesture = new LaunchGesture(config);
   const physics = { restore(state) { this.state = state; }, launch() {}, step() {}, stop() {},
-    sample() { return { players: this.state.players, ball: this.state.ball }; } };
+    sample() { return { players: this.state.players, ball: this.state.ball, goal: null }; } };
   boot.match = new LocalMatch(createPrototypeState('input-regression', config, 'normal'), physics, config);
   const rendered = []; boot.screen = { toField: point => point, render: (...args) => rendered.push(args) };
   const event = (x = 0, y = -2.5, id = 1) => ({ getID: () => id, getLocation: () => ({ x, y }),
@@ -51,9 +51,9 @@ test('停止后的首次按下立即开始下一次拖动，无需额外帧或�
   boot.beginTouch(event()); boot.endTouch(event(0, -3.5));
   for (let i = 0; i < 18; i++) boot.match.advance(config.fixedStep);
   assert.equal(boot.match.getSimulationStatus().reason, 'stopped');
-  boot.beginTouch(event()); boot.moveTouch(event(0, -3));
+  boot.beginTouch(event(0.7, 1)); boot.moveTouch(event(0.7, 0.5));
   assert.ok(boot.gesture.preview().aim);
-  boot.endTouch(event(0, -3));
+  boot.endTouch(event(0.7, 0.5));
   assert.equal(boot.match.getAcceptedCommands().length, 2);
   assert.equal(boot.match.getSnapshot().phase, 'Simulating');
 });

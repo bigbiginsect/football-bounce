@@ -11,6 +11,7 @@ profiles/
 # NPM
 #//////////////////////////
 node_modules/
+.pnpm-store/
 
 #//////////////////////////
 # VSCode

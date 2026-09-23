@@ -41,8 +41,8 @@ export class PrototypeView {
         this.powerCircle = this.node(field, 'PowerCircle', w, h).addComponent(Graphics);
         this.bodies = this.node(field, 'Bodies', w, h).addComponent(Graphics);
         this.aim = this.node(field, 'Aim', w, h).addComponent(Graphics);
-        this.status = this.label(this.root, '', 470, 22);
-        this.info = this.label(this.root, '', -473, 20);
+        this.status = this.label(this.root, '', 490, 22);
+        this.info = this.label(this.root, '', -500, 20);
         this.button('重新开始', 0, restart);
         this.label(this.root, `${config.version} · 标准模式 3 分钟 · 每队 5 人`, -612, 17);
     }

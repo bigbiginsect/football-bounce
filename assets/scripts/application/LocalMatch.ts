@@ -25,6 +25,8 @@ export class LocalMatch {
 
     constructor(initialState: GameState, private readonly physics?: PhysicsPort, config?: PrototypeConfig) {
         this.state = copy(initialState);
+        this.endReason = initialState.phase === 'Finished' ? 'finished'
+            : initialState.phase === 'Simulating' ? 'moving' : 'ready';
         if (physics && !config) throw new Error('物理适配器需要配置');
         if (config) this.config = freezeConfig(config);
         physics?.restore(this.state);
@@ -64,7 +66,9 @@ export class LocalMatch {
                     players: this.state.players.map(player => ({ ...player,
                         ...copy(frame.players.find(p => p.instanceId === player.instanceId)!) })),
                     ball: copy(frame.ball) };
-                const scorer = detectGoal(this.state, config);
+                const scorer = frame.goal === 'top' ? 'blue' : frame.goal === 'bottom' ? 'red' : null;
+                // 事件由物理层采集，规则层仍用权威纯数据复核，避免错误事件直接改比分。
+                if (scorer !== detectGoal(this.state, config)) { this.finishSimulation('invalid'); break; }
                 if (scorer) { this.finishSimulation('goal', scorer); break; }
                 const quiet = [...frame.players, frame.ball].every(b => Math.hypot(b.velocity.x, b.velocity.y) <= config.stopSpeed);
                 this.quietSteps = quiet ? this.quietSteps + 1 : 0;
@@ -128,7 +132,8 @@ export class LocalMatch {
     }
 
     private finishSimulation(reason: 'stopped' | 'timeout' | 'invalid' | 'goal', scorer?: string): void {
-        const bodySource = reason === 'invalid' ? this.beforeLaunch! : this.state;
+        // 从运动中快照恢复时没有本进程的发射前缓存，退回最近的权威快照而不是抛错。
+        const bodySource = reason === 'invalid' && this.beforeLaunch ? this.beforeLaunch : this.state;
         const zero = { x: 0, y: 0 };
         this.state = { ...this.state, revision: this.state.revision + 1, phase: 'Resolving',
             players: bodySource.players.map(p => ({ ...p, velocity: { ...zero } })),
@@ -146,6 +151,7 @@ export class LocalMatch {
         } else if (scorer) {
             this.resetAfterGoal(this.otherOperator(scorer));
         } else {
+            if (reason === 'goal') throw new Error('进球结算缺少得分方');
             this.changeTurn(reason);
         }
     }

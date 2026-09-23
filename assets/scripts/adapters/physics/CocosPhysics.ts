@@ -4,6 +4,7 @@ import type { Command } from '../../core/Command';
 import type { BodyState, GameState } from '../../core/GameState';
 import type { PhysicsPort, PhysicsFrame } from '../../core/PhysicsPort';
 import type { PrototypeConfig } from '../../core/PrototypeConfig';
+import { detectGoal } from '../../core/PrototypeConfig';
 import { releaseWallContact } from '../../core/WallContact';
 
 /** 物理根节点不参与 UI 缩放。位置为引擎单位，速度/冲量按 Box2D 的 SI 单位。 */
@@ -112,8 +113,10 @@ export class CocosPhysics implements PhysicsPort {
             position: { x: body.node.position.x / PHYSICS_2D_PTM_RATIO, y: body.node.position.y / PHYSICS_2D_PTM_RATIO },
             velocity: { x: body.linearVelocity.x, y: body.linearVelocity.y },
         });
+        const ball = read(this.bodies.get('ball')!);
+        const goal = detectGoal({ ball }, this.config);
         return { players: [...this.bodies].filter(([id]) => id !== 'ball').map(([instanceId, body]) => ({ instanceId, ...read(body) })),
-            ball: read(this.bodies.get('ball')!) };
+            ball, goal: goal === 'blue' ? 'top' : goal === 'red' ? 'bottom' : null };
     }
     stop(): void {
         for (const body of this.bodies.values()) { body.linearVelocity = new Vec2(); body.angularVelocity = 0; }
