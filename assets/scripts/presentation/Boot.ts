@@ -146,7 +146,8 @@ export class Boot extends Component {
             `蓝 ${state.score.blue ?? 0} : ${state.score.red ?? 0} 红　比赛 ${Math.floor(seconds / 60)}:${secondText}`
             + `${state.phase === 'Aiming' ? `　回合 ${turnSeconds} 秒` : ''}\n`
             + `第 ${state.turnNumber} 回合 · 先手 ${state.random.firstOperatorId === 'blue' ? '蓝方' : '红方'}`
-            + `${status.droppedSeconds > 0.01 ? ' · 卡顿已限步' : ''}`);
+            + `${status.droppedSeconds > 0.01 ? ' · 卡顿已限步' : ''}`,
+            this.physics?.getBallAngle?.() ?? 0);
     }
     onDestroy(): void { this.physics?.dispose(); this.screen?.dispose(); }
 }

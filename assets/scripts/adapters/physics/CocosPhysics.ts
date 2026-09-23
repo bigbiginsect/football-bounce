@@ -48,7 +48,8 @@ export class CocosPhysics implements PhysicsPort {
         node.setPosition(state.position.x * PHYSICS_2D_PTM_RATIO, state.position.y * PHYSICS_2D_PTM_RATIO);
         const body = node.addComponent(RigidBody2D);
         body.type = ERigidBody2DType.Dynamic; body.group = 1; body.bullet = true;
-        body.fixedRotation = true; body.gravityScale = 0;
+        body.fixedRotation = !ball; body.gravityScale = 0;
+        if (ball) body.angularDamping = c.ballAngularDamping;
         body.linearDamping = ball ? c.ballDamping : c.playerDamping;
         const collider = node.addComponent(CircleCollider2D);
         collider.radius = radius * PHYSICS_2D_PTM_RATIO;
@@ -62,6 +63,7 @@ export class CocosPhysics implements PhysicsPort {
             const body = this.bodies.get(id)!;
             body.node.setPosition(data.position.x * PHYSICS_2D_PTM_RATIO, data.position.y * PHYSICS_2D_PTM_RATIO);
             body.linearVelocity = new Vec2(data.velocity.x, data.velocity.y); body.angularVelocity = 0;
+            if (id === 'ball') body.linearDamping = this.config.ballDamping;
             body.wakeUp();
         }
         this.system.physicsWorld.syncSceneToPhysics();
@@ -79,6 +81,10 @@ export class CocosPhysics implements PhysicsPort {
         }
     }
     step(seconds: number): void {
+        const ball = this.bodies.get('ball')!;
+        const speed = ball.linearVelocity.length();
+        ball.linearDamping = speed < this.config.stopSpeed * this.config.ballLowSpeedMultiplier
+            ? this.config.ballLowSpeedDamping : this.config.ballDamping;
         this.system.physicsWorld.syncSceneToPhysics();
         this.system.step(seconds); this.limitSpeeds();
         this.system.physicsWorld.syncPhysicsToScene();
@@ -102,6 +108,8 @@ export class CocosPhysics implements PhysicsPort {
         return { players: [...this.bodies].filter(([id]) => id !== 'ball').map(([instanceId, body]) => ({ instanceId, ...read(body) })),
             ball, goal: goal === 'blue' ? 'top' : goal === 'red' ? 'bottom' : null };
     }
+    /** 仅供本地球面图案显示；角度尚未进入跨设备权威状态。 */
+    getBallAngle(): number { return this.bodies.get('ball')!.node.angle; }
     stop(): void {
         for (const body of this.bodies.values()) { body.linearVelocity = new Vec2(); body.angularVelocity = 0; }
     }

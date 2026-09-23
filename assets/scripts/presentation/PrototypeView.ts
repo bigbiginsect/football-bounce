@@ -4,7 +4,7 @@ import type { PrototypeConfig } from '../core/PrototypeConfig';
 import type { LaunchGesture } from '../core/LaunchGesture';
 
 const pixelsPerMeter = 80;
-/** 仅画权威状态；物理节点不挂在本视图下。 */
+/** 位置读取权威状态；本地皮球图案角度读取物理刚体。物理节点不挂在本视图下。 */
 export class PrototypeView {
     readonly root: Node;
     private readonly field: UITransform;
@@ -71,7 +71,8 @@ export class PrototypeView {
         const local = this.field.convertToNodeSpaceAR(world);
         return { x: local.x / pixelsPerMeter, y: local.y / pixelsPerMeter };
     }
-    render(state: GameState, gesture: ReturnType<LaunchGesture['preview']>, status: string, info: string): void {
+    render(state: GameState, gesture: ReturnType<LaunchGesture['preview']>, status: string, info: string,
+        ballAngle = 0): void {
         const g = this.bodies; g.clear();
         for (const player of state.players) {
             g.fillColor = player.ownerId === 'blue' ? new Color(68, 167, 255) : new Color(245, 105, 102);
@@ -79,8 +80,8 @@ export class PrototypeView {
             g.strokeColor = player.ownerId === state.activeOperatorId ? new Color(255, 220, 90) : Color.WHITE;
             g.lineWidth = player.ownerId === state.activeOperatorId ? 4 : 2; g.stroke();
         }
-        g.fillColor = Color.WHITE; g.circle(state.ball.position.x * pixelsPerMeter, state.ball.position.y * pixelsPerMeter,
-            this.config.ballRadius * pixelsPerMeter); g.fill();
+        this.drawBall(g, state.ball.position.x * pixelsPerMeter, state.ball.position.y * pixelsPerMeter,
+            this.config.ballRadius * pixelsPerMeter, ballAngle);
         const a = this.aim; a.clear();
         const powerCircle = this.powerCircle; powerCircle.clear();
         if (gesture) {
@@ -110,6 +111,33 @@ export class PrototypeView {
             a.lineTo(ex, ey); a.lineTo(ex - direction.x * 12 - direction.y * 7, ey - direction.y * 12 + direction.x * 7); a.stroke();
         }
         this.status.string = status; this.info.string = info;
+    }
+    private drawBall(g: Graphics, x: number, y: number, radius: number, angleDegrees: number): void {
+        g.fillColor = Color.WHITE; g.circle(x, y, radius); g.fill();
+        g.strokeColor = new Color(28, 31, 35); g.lineWidth = Math.max(1, radius * 0.1);
+        g.circle(x, y, radius); g.stroke();
+        const angle = angleDegrees * Math.PI / 180;
+        const polygon = (cx: number, cy: number, size: number, rotation: number): void => {
+            for (let vertex = 0; vertex <= 5; vertex++) {
+                const theta = rotation + (vertex % 5) * Math.PI * 2 / 5;
+                const px = cx + Math.cos(theta) * size; const py = cy + Math.sin(theta) * size;
+                if (vertex === 0) g.moveTo(px, py); else g.lineTo(px, py);
+            }
+            g.fill();
+        };
+        g.fillColor = new Color(25, 28, 32);
+        polygon(x, y, radius * 0.36, angle - Math.PI / 2);
+        for (let panel = 0; panel < 5; panel++) {
+            const direction = angle - Math.PI / 2 + panel * Math.PI * 2 / 5;
+            // 一块近处黑面稍大，模拟球面透视并打破五重重复，避免快转时看起来突然反向。
+            const distance = panel === 0 ? 0.66 : 0.73;
+            const size = panel === 0 ? 0.32 : 0.23;
+            polygon(x + Math.cos(direction) * radius * distance,
+                y + Math.sin(direction) * radius * distance, radius * size, direction);
+            g.moveTo(x + Math.cos(direction) * radius * 0.36, y + Math.sin(direction) * radius * 0.36);
+            g.lineTo(x + Math.cos(direction) * radius * 0.5, y + Math.sin(direction) * radius * 0.5);
+            g.stroke();
+        }
     }
     dispose(): void { if (isValid(this.root, true)) this.root.destroy(); }
 }

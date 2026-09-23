@@ -32,6 +32,7 @@ function load(relative) {
 }
 const { Boot } = load('assets/scripts/presentation/Boot.ts');
 const { PrototypeView } = load('assets/scripts/presentation/PrototypeView.ts');
+const { CocosPhysics } = load('assets/scripts/adapters/physics/CocosPhysics.ts');
 const { LocalMatch } = load('assets/scripts/application/LocalMatch.ts');
 const { LaunchGesture } = load('assets/scripts/core/LaunchGesture.ts');
 const { prototypeConfig, freezeConfig, createPrototypeState } = load('assets/scripts/core/PrototypeConfig.ts');
@@ -91,7 +92,10 @@ test('触点转换使用渲染相机，适应视口偏移和不同缩放', () =>
 });
 function viewFixture() {
   const screen = Object.create(PrototypeView.prototype); screen.config = config;
-  screen.bodies = { clear() {}, circle() {}, fill() {}, stroke() {} };
+  const ballPaths = []; const ballFills = [];
+  screen.bodies = { clear() { ballPaths.length = 0; ballFills.length = 0; }, circle() {},
+    moveTo(x, y) { ballPaths.push([x, y]); }, lineTo(x, y) { ballPaths.push([x, y]); },
+    fill() { ballFills.push(this.fillColor); }, stroke() {} };
   screen.status = {}; screen.info = {};
   const circles = [];
   screen.powerCircle = { clear() { circles.length = 0; }, circle(x, y, radius) { circles.push({ x, y, radius }); }, fill() {} };
@@ -99,8 +103,41 @@ function viewFixture() {
   screen.aim = { clear() { lines.length = 0; }, moveTo(x, y) { lines.push([x, y]); },
     lineTo(x, y) { lines.push([x, y]); }, stroke() {} };
   const state = createPrototypeState('view', config, 'normal');
-  return { screen, state, lines, circles };
+  return { screen, state, lines, circles, ballPaths, ballFills };
 }
+test('黑白足球图案随物理角度旋转，中心黑块与外围黑块保留', () => {
+  const { screen, state, ballPaths, ballFills } = viewFixture();
+  screen.render(state, null, '', '', 0);
+  const first = ballPaths[0];
+  assert.equal(ballFills.filter(color => color.r === 25).length, 6);
+  screen.render(state, null, '', '', 90);
+  const rotated = ballPaths[0];
+  assert.ok(Math.hypot(first[0] - rotated[0], first[1] - rotated[1]) > 3);
+  assert.equal(ballFills.filter(color => color.r === 25).length, 6);
+});
+test('球面黑块打破 72 度重复，高速旋转不会把正转 60 度误认成反转 12 度', () => {
+  const { screen, state, ballPaths } = viewFixture();
+  const signature = () => Array.from({ length: 5 }, (_, panel) => {
+    const vertices = ballPaths.slice(6 + panel * 8, 11 + panel * 8);
+    const cx = vertices.reduce((sum, point) => sum + point[0], 0) / 5;
+    const cy = vertices.reduce((sum, point) => sum + point[1], 0) / 5;
+    return [cx, cy, Math.hypot(vertices[0][0] - cx, vertices[0][1] - cy)]
+      .map(value => Math.round(value * 100) / 100).join(',');
+  }).sort();
+  screen.render(state, null, '', '', 0); const initial = signature();
+  screen.render(state, null, '', '', 72); assert.notDeepEqual(signature(), initial);
+  screen.render(state, null, '', '', 360); assert.deepEqual(signature(), initial);
+});
+test('物理适配层限制线速度时不改写皮球自旋', () => {
+  const physics = Object.create(CocosPhysics.prototype); physics.config = config;
+  const body = spin => ({ angularVelocity: spin, linearVelocity: { length: () => 0 } });
+  const player = body(0); const ball = body(100);
+  physics.bodies = new Map([['a1', player], ['ball', ball]]);
+  physics.limitSpeeds(); assert.equal(ball.angularVelocity, 100);
+  ball.angularVelocity = -100; physics.limitSpeeds();
+  assert.equal(ball.angularVelocity, -100);
+  assert.equal(player.angularVelocity, 0);
+});
 test('白色虚线有间隔，精度总长不随力度变化，方向正确', () => {
   const { screen, state, lines } = viewFixture();
   for (const power of [0.01, 0.5, 1]) for (const direction of [{ x: 0, y: 1 }, { x: -1, y: 0 }]) {
