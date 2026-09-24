@@ -15,16 +15,22 @@ const config = freezeConfig(prototypeConfig);
 const clone = value => structuredClone(value);
 
 test('球员目录唯一、头像文件存在且评分在范围内', () => {
-  assert.equal(catalog.version, 'players-002');
+  assert.equal(catalog.version, 'players-003');
   assert.equal(catalog.players.length, 6);
   assert.equal(new Set(catalog.players.map(player => player.id)).size, 6);
   for (const player of catalog.players) {
+    for (const key of ['weight', 'power', 'precision', 'mentality', 'curve']) {
+      assert.ok(Number.isInteger(player[key]) && player[key] >= 0 && player[key] <= 100);
+    }
+    assert.ok(player.quip.length > 0);
     const filename = path.join(__dirname, '..', 'assets', 'resources', `${player.portraitPath}.png`);
     const bytes = fs.readFileSync(filename);
     assert.deepEqual([...bytes.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
   }
   assert.throws(() => parsePlayerCatalog({ ...raw, players: [...raw.players, raw.players[0]] }), /重复/);
   assert.throws(() => parsePlayerCatalog({ ...raw, players: [{ ...raw.players[0], power: 101 }] }), /power/);
+  assert.throws(() => parsePlayerCatalog({ ...raw, players: [{ ...raw.players[0], mentality: -1 }] }), /mentality/);
+  assert.throws(() => parsePlayerCatalog({ ...raw, players: [{ ...raw.players[0], quip: '' }] }), /quip/);
   assert.throws(() => parsePlayerCatalog({ ...raw, players: [{ ...raw.players[0], portraitPath: '../bad' }] }), /头像路径/);
   assert.throws(() => parsePlayerCatalog({ ...raw, players: [{ ...raw.players[0], skill: {
     id: 'future', params: { amount: Infinity } } }] }), /技能参数/);

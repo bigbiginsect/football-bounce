@@ -7,7 +7,11 @@ import type { LineupDraftSnapshot, LineupEdit } from '../application/LineupEdito
 
 type Source = { kind: 'bench'; templateId: string } | { kind: 'slot'; slot: number; templateId: string };
 type Touch = { id: number; start: Vector2Data; last: Vector2Data; source?: Source;
-    mode: 'pending' | 'scroll' | 'drag' | 'button'; button?: 'back' | 'confirm' };
+    mode: 'pending' | 'scroll' | 'drag' | 'button' | 'navigate'; button?: 'back' | 'confirm' };
+export interface LineupNavigation {
+    readonly previewWarehouse: (progress: number) => void;
+    readonly finishWarehouse: (complete: boolean) => void;
+}
 const slots: readonly Vector2Data[] = [
     { x: -132, y: -150 }, { x: 132, y: -150 }, { x: 0, y: -6 },
     { x: -132, y: 138 }, { x: 132, y: 138 },
@@ -19,6 +23,7 @@ const viewportWidth = 624;
 export class LineupView {
     readonly root: Node;
     private readonly camera: Camera;
+    private readonly navigationTransform: UITransform;
     private readonly viewport: Node;
     private readonly slotLayer: Node;
     private readonly title: Label;
@@ -36,15 +41,18 @@ export class LineupView {
 
     constructor(parent: Node, private readonly catalog: PlayerCatalog,
         private readonly portraits: ReadonlyMap<string, SpriteFrame>,
-        private readonly submit: (edit: LineupEdit) => void) {
+        private readonly submit: (edit: LineupEdit) => void,
+        private readonly navigation?: LineupNavigation) {
         const camera = parent.getComponent(Canvas)?.cameraComponent;
-        if (!camera) throw new Error('阵容视图需要 Canvas 相机');
-        this.camera = camera;
+        const transform = parent.getComponent(UITransform);
+        if (!camera || !transform) throw new Error('阵容视图需要 Canvas 相机和 UITransform');
+        this.camera = camera; this.navigationTransform = transform;
         this.root = this.node(parent, 'LineupScreen', 720, 1280);
         this.panel(this.root, 'Background', 720, 1280, 0, 0, new Color(9, 27, 37), 0);
         this.panel(this.root, 'TopAccent', 720, 8, 0, 636, new Color(90, 205, 216), 0);
         this.title = this.label(this.root, '', 0, 557, 42, 680);
         this.subtitle = this.label(this.root, '', 0, 505, 21, 680);
+        this.label(this.root, '顶部或左边缘向右滑动进入完整球员仓库　→', 0, 461, 18, 650);
         this.panel(this.root, 'PitchFrame', 584, 570, 0, 135, new Color(18, 57, 52), 26);
         const pitch = this.node(this.root, 'Pitch', 548, 540); pitch.setPosition(0, 135);
         const grass = pitch.addComponent(Graphics);
@@ -106,6 +114,11 @@ export class LineupView {
     touchStart(id: number, screenPoint: Vector2Data): boolean {
         if (this.touch) return true; // 第二根手指不接管本次手势
         const point = this.local(screenPoint);
+        if (this.navigation && (point.y >= 440 || point.x <= -300)) {
+            const navigationPoint = this.navigationPoint(screenPoint);
+            this.touch = { id, start: navigationPoint, last: navigationPoint, mode: 'navigate' };
+            this.navigation.previewWarehouse(0); return true;
+        }
         if (point.y >= -617 && point.y <= -545) {
             if (point.x >= -330 && point.x <= -180 && this.snapshot.side === 'red') {
                 this.touch = { id, start: point, last: point, mode: 'button', button: 'back' }; return true;
@@ -133,6 +146,11 @@ export class LineupView {
     touchMove(id: number, screenPoint: Vector2Data): void {
         const touch = this.touch;
         if (!touch || touch.id !== id) return;
+        if (touch.mode === 'navigate') {
+            const point = this.navigationPoint(screenPoint);
+            const progress = Math.max(0, Math.min(1, (point.x - touch.start.x) / 720));
+            this.navigation?.previewWarehouse(progress); touch.last = point; return;
+        }
         const point = this.local(screenPoint);
         const dx = point.x - touch.start.x; const dy = point.y - touch.start.y;
         if (touch.mode === 'pending' && Math.hypot(dx, dy) > 14) {
@@ -155,6 +173,13 @@ export class LineupView {
     touchEnd(id: number, screenPoint: Vector2Data): void {
         const touch = this.touch;
         if (!touch || touch.id !== id) return;
+        if (touch.mode === 'navigate') {
+            const point = this.navigationPoint(screenPoint);
+            const dx = point.x - touch.start.x; const dy = point.y - touch.start.y;
+            this.touch = undefined;
+            this.navigation?.finishWarehouse(dx >= 105 && Math.abs(dx) > Math.abs(dy) * 1.15);
+            return;
+        }
         const point = this.local(screenPoint);
         this.clearGesture();
         if (touch.mode === 'button' && Math.hypot(point.x - touch.start.x, point.y - touch.start.y) < 24) {
@@ -172,7 +197,9 @@ export class LineupView {
     }
 
     touchCancel(id?: number): void {
-        if (id === undefined || this.touch?.id === id) this.clearGesture();
+        if (id !== undefined && this.touch?.id !== id) return;
+        const navigation = this.touch?.mode === 'navigate'; this.clearGesture();
+        if (navigation) this.navigation?.finishWarehouse(false);
     }
 
     private clearGesture(): void {
@@ -201,6 +228,11 @@ export class LineupView {
     private local(point: Vector2Data): Vector2Data {
         const world = this.camera.screenToWorld(new Vec3(point.x, point.y, 0));
         const local = this.root.getComponent(UITransform)!.convertToNodeSpaceAR(world);
+        return { x: local.x, y: local.y };
+    }
+    private navigationPoint(point: Vector2Data): Vector2Data {
+        const world = this.camera.screenToWorld(new Vec3(point.x, point.y, 0));
+        const local = this.navigationTransform.convertToNodeSpaceAR(world);
         return { x: local.x, y: local.y };
     }
     private playerCard(parent: Node, id: string, width: number, height: number, field: boolean): Node {

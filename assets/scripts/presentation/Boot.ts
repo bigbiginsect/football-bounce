@@ -1,5 +1,6 @@
 import { _decorator, Component, EventTouch, input, Input, game, Game, view, ResolutionPolicy,
-    Label, Node, UITransform, JsonAsset, SpriteFrame, assetManager, AssetManager, isValid } from 'cc';
+    Label, Node, UITransform, JsonAsset, SpriteFrame, assetManager, AssetManager, isValid,
+    AudioClip, AudioSource, tween, Vec3 } from 'cc';
 import { LocalMatch } from '../application/LocalMatch';
 import { createStandardMatchState, freezeConfig, prototypeConfig, PrototypeConfig } from '../core/PrototypeConfig';
 import { LaunchGesture } from '../core/LaunchGesture';
@@ -9,9 +10,13 @@ import { parsePlayerCatalog, PlayerCatalog } from '../core/PlayerCatalog';
 import { LineupEditor, LineupEdit } from '../application/LineupEditor';
 import type { MatchLineups } from '../core/Lineup';
 import { LineupView } from './LineupView';
+import { MatchFeedbackTracker, MatchOverlay, overlayFor } from './MatchFeedback';
+import { PlayerWarehouse, WarehouseCommand } from '../application/PlayerWarehouse';
+import { PlayerWarehouseView } from './PlayerWarehouseView';
 
 const { ccclass } = _decorator;
 let sessionSequence = 0;
+type SoundCue = 'launch' | 'collision' | 'goal' | 'timeout' | 'finish';
 
 /** 组合应用、输入与视图；比分和阶段只由 LocalMatch 写入。 */
 @ccclass('Boot')
@@ -24,8 +29,18 @@ export class Boot extends Component {
     private screen?: PrototypeView;
     private lineupView?: LineupView;
     private lineupEditor?: LineupEditor;
+    private warehouse?: PlayerWarehouse;
+    private warehouseView?: PlayerWarehouseView;
+    private warehouseOpen = false;
+    private navigationAnimating = false;
     private lineups?: MatchLineups;
     private gesture?: LaunchGesture;
+    private readonly feedbackTracker = new MatchFeedbackTracker();
+    private feedbackOverlay: MatchOverlay | null = null;
+    private feedbackSeconds = 0;
+    private collisionCooldown = 0;
+    private audioSource?: AudioSource;
+    private audioClips = new Map<SoundCue, AudioClip>();
     private commandSequence = 0;
     private paused = false;
     private background = false;
@@ -49,8 +64,16 @@ export class Boot extends Component {
             new Promise<readonly [string, SpriteFrame]>((resolve, reject) =>
                 bundle.load(`${template.portraitPath}/spriteFrame`, SpriteFrame, (error, frame) =>
                     error ? reject(error) : resolve([template.id, frame])))));
+        const soundCues: readonly SoundCue[] = ['launch', 'collision', 'goal', 'timeout', 'finish'];
+        const sounds = await Promise.all(soundCues.map(cue =>
+            new Promise<readonly [SoundCue, AudioClip]>((resolve, reject) =>
+                bundle.load(`sfx/${cue}`, AudioClip, (error, clip) =>
+                    error ? reject(error) : resolve([cue, clip])))));
         if (!isValid(this.node, true)) return;
         this.portraitFrames = new Map(frames);
+        this.audioClips = new Map(sounds);
+        const audioNode = new Node('MatchAudio'); audioNode.layer = this.node.layer; this.node.addChild(audioNode);
+        this.audioSource = audioNode.addComponent(AudioSource); this.audioSource.volume = 0.8;
         this.gesture = new LaunchGesture(this.config);
         this.openLineup(); this.listen();
     }
@@ -59,6 +82,7 @@ export class Boot extends Component {
         try {
             this.physics?.dispose(); this.physics = undefined; this.screen?.dispose(); this.screen = undefined;
             this.lineupView?.dispose(); this.lineupView = undefined;
+            this.warehouseView?.dispose(); this.warehouseView = undefined;
             const node = new Node('StartupError'); node.layer = this.node.layer; this.node.addChild(node);
             node.addComponent(UITransform).setContentSize(650, 300);
             const label = node.addComponent(Label); label.fontSize = 24;
@@ -70,26 +94,83 @@ export class Boot extends Component {
     private openLineup(): void {
         this.gesture?.cancel(); this.physics?.dispose(); this.physics = undefined;
         this.screen?.dispose(); this.screen = undefined; this.match = undefined;
+        this.audioSource?.stop(); this.feedbackTracker.reset();
+        this.feedbackOverlay = null; this.feedbackSeconds = 0; this.collisionCooldown = 0;
+        this.warehouseView?.dispose(); this.warehouseView = undefined;
+        this.warehouse = undefined; this.warehouseOpen = false; this.navigationAnimating = false;
         this.lineupView?.dispose();
         this.lineupEditor = new LineupEditor(this.catalog, this.config, this.lineups);
+        this.warehouse = new PlayerWarehouse(this.catalog, this.lineupEditor);
         this.lineupView = new LineupView(this.node, this.catalog, this.portraitFrames,
-            edit => this.submitLineup(edit));
+            edit => this.submitLineup(edit), {
+                previewWarehouse: progress => this.previewWarehouse(progress),
+                finishWarehouse: complete => this.animateWarehouse(complete),
+            });
         this.lineupView.setDraft(this.lineupEditor.getSnapshot());
         this.message = '';
     }
     private submitLineup(edit: LineupEdit): void {
         if (!this.lineupEditor?.execute(edit)) return;
         const snapshot = this.lineupEditor.getSnapshot();
-        if (!snapshot.ready) { this.lineupView?.setDraft(snapshot); return; }
+        if (!snapshot.ready) {
+            this.lineupView?.setDraft(snapshot); this.warehouseView?.setSnapshot(this.warehouse!.getSnapshot());
+            return;
+        }
         this.lineups = this.lineupEditor.toMatchLineups();
         this.lineupView?.dispose(); this.lineupView = undefined; this.lineupEditor = undefined;
+        this.warehouseView?.dispose(); this.warehouseView = undefined; this.warehouse = undefined;
+        this.warehouseOpen = false; this.navigationAnimating = false;
         this.screen = new PrototypeView(this.node, this.config, () => {
             if (!this.gesture?.preview()) this.reset();
         }, () => this.openLineup(), this.catalog, this.portraitFrames);
         this.reset();
     }
+    private submitWarehouse(command: WarehouseCommand): void {
+        if (!this.warehouse?.execute(command)) return;
+        this.warehouseView?.setSnapshot(this.warehouse.getSnapshot());
+        this.lineupView?.setDraft(this.lineupEditor!.getSnapshot());
+    }
+    private ensureWarehouseView(): PlayerWarehouseView | undefined {
+        if (!this.lineupView || !this.warehouse) return undefined;
+        if (!this.warehouseView) {
+            this.warehouseView = new PlayerWarehouseView(this.node, this.catalog, this.portraitFrames,
+                command => this.submitWarehouse(command), {
+                    previewBack: progress => this.previewWarehouseBack(progress),
+                    finishBack: complete => this.animateWarehouse(!complete),
+                });
+            this.warehouseView.setSnapshot(this.warehouse.getSnapshot());
+        }
+        return this.warehouseView;
+    }
+    private previewWarehouse(progress: number): void {
+        if (this.navigationAnimating || this.warehouseOpen || !this.lineupView) return;
+        const warehouse = this.ensureWarehouseView(); if (!warehouse) return;
+        this.lineupView.root.setPosition(progress * 720, 0);
+        warehouse.root.setPosition(-720 + progress * 720, 0);
+    }
+    private previewWarehouseBack(progress: number): void {
+        if (this.navigationAnimating || !this.warehouseOpen || !this.lineupView || !this.warehouseView) return;
+        this.lineupView.root.setPosition(720 - progress * 720, 0);
+        this.warehouseView.root.setPosition(-progress * 720, 0);
+    }
+    private animateWarehouse(open: boolean): void {
+        if (this.navigationAnimating || !this.lineupView) return;
+        const warehouse = this.ensureWarehouseView(); if (!warehouse) return;
+        this.navigationAnimating = true;
+        const targetLineupX = open ? 720 : 0; const targetWarehouseX = open ? 0 : -720;
+        const distance = Math.abs(warehouse.root.position.x - targetWarehouseX) / 720;
+        const duration = Math.max(0.08, 0.2 * distance);
+        tween(this.lineupView.root).to(duration, { position: new Vec3(targetLineupX, 0, 0) },
+            { easing: 'quadOut' }).start();
+        tween(warehouse.root).to(duration, { position: new Vec3(targetWarehouseX, 0, 0) },
+            { easing: 'quadOut' }).call(() => {
+                this.navigationAnimating = false; this.warehouseOpen = open;
+                if (!open) { this.warehouseView?.dispose(); this.warehouseView = undefined; }
+            }).start();
+    }
     private reset(): void {
         this.gesture?.cancel(); this.physics?.dispose(); this.physics = undefined;
+        this.audioSource?.stop(); this.feedbackOverlay = null; this.feedbackSeconds = 0; this.collisionCooldown = 0;
         // 会话 ID 来自组合层，规则核心不读取真实系统时间。
         const sequence = ++sessionSequence;
         const seed = (Date.now() ^ Math.imul(sequence, 0x9e3779b9)) >>> 0;
@@ -97,12 +178,18 @@ export class Boot extends Component {
             this.catalog, this.lineups);
         this.physics = new CocosPhysics(this.node.scene!, this.config, state, this.catalog);
         this.match = new LocalMatch(state, this.physics, this.config);
+        this.feedbackTracker.reset(state);
         this.screen?.setPlayers(state);
         this.message = ''; this.skipFrame = true; this.draw();
     }
     private readonly beginTouch = (event: EventTouch): void => {
         const id = event.getID(); if (id === null) return;
         if (this.background || !this.enabledInHierarchy) return;
+        if (this.navigationAnimating) return;
+        if (this.warehouseView && this.warehouseOpen) {
+            if (this.paused) this.resume();
+            this.warehouseView.touchStart(id, event.getLocation()); return;
+        }
         if (this.lineupView) {
             if (this.paused) this.resume();
             this.lineupView.touchStart(id, event.getLocation()); return;
@@ -119,11 +206,19 @@ export class Boot extends Component {
     };
     private readonly moveTouch = (event: EventTouch): void => {
         const id = event.getID(); if (id === null) return;
+        if (this.navigationAnimating) return;
+        if (this.warehouseView && this.warehouseOpen) {
+            this.warehouseView.touchMove(id, event.getLocation()); return;
+        }
         if (this.lineupView) { this.lineupView.touchMove(id, event.getLocation()); return; }
         if (this.screen) this.gesture?.move(id, this.screen.toField(event.getLocation()));
     };
     private readonly endTouch = (event: EventTouch): void => {
         const id = event.getID(); if (id === null) return;
+        if (this.navigationAnimating) return;
+        if (this.warehouseView && this.warehouseOpen) {
+            this.warehouseView.touchEnd(id, event.getLocation()); return;
+        }
         if (this.lineupView) { this.lineupView.touchEnd(id, event.getLocation()); return; }
         if (this.paused || !this.screen || !this.match) return;
         const launch = this.gesture?.end(id, this.screen.toField(event.getLocation()));
@@ -134,13 +229,17 @@ export class Boot extends Component {
             matchId: state.matchId, turnNumber: state.turnNumber, operatorId, playerId: launch.playerId,
             ...launch.aim }, operatorId);
         this.message = result.ok ? '' : `操作被拒绝：${result.reason}`;
+        if (result.ok) this.playCue('launch', 0.75);
     };
     private readonly cancelTouch = (event: EventTouch): void => {
         const id = event.getID(); if (id !== null) this.gesture?.cancel(id);
         if (id !== null) this.lineupView?.touchCancel(id);
+        if (id !== null) this.warehouseView?.touchCancel(id);
     };
     private readonly pause = (): void => {
         this.paused = true; this.gesture?.cancel(); this.lineupView?.touchCancel();
+        this.warehouseView?.touchCancel();
+        this.audioSource?.stop();
         this.match?.discardAccumulatedTime();
         this.draw();
     };
@@ -175,8 +274,39 @@ export class Boot extends Component {
     }
     update(deltaSeconds: number): void {
         if (this.paused) return;
+        this.feedbackSeconds = Math.max(0, this.feedbackSeconds - deltaSeconds);
+        if (this.feedbackSeconds <= 0) this.feedbackOverlay = null;
+        this.collisionCooldown = Math.max(0, this.collisionCooldown - deltaSeconds);
         if (this.skipFrame) this.skipFrame = false; else this.match?.advance(deltaSeconds);
+        this.collectFeedback();
         this.draw();
+    }
+    private collectFeedback(): void {
+        if (!this.match) return;
+        const state = this.match.getSnapshot();
+        const status = this.match.getSimulationStatus();
+        const events = this.feedbackTracker.observe(state, status.reason);
+        let suppressCollision = false;
+        for (const event of events) {
+            const overlay = overlayFor(event);
+            if (overlay) {
+                this.feedbackOverlay = overlay;
+                this.feedbackSeconds = event.type === 'goal' ? 1.25 : 0.95;
+            }
+            if (event.type === 'goal') { this.playCue('goal'); suppressCollision = true; }
+            else if (event.type === 'turn-timeout') this.playCue('timeout', 0.85);
+            else { this.playCue('finish'); suppressCollision = true; }
+        }
+        const impact = this.physics?.consumeStrongestImpact() ?? 0;
+        if (!suppressCollision && impact >= 0.035 && this.collisionCooldown <= 0) {
+            this.playCue('collision', Math.min(1, 0.25 + impact * 0.9));
+            this.collisionCooldown = 0.11;
+        }
+    }
+    private playCue(cue: SoundCue, volume = 1): void {
+        const clip = this.audioClips.get(cue);
+        if (!clip || this.background) return;
+        this.audioSource?.playOneShot(clip, volume);
     }
     private draw(): void {
         if (!this.match || !this.screen) return;
@@ -192,19 +322,19 @@ export class Boot extends Component {
             goal: `进球！${side}开球`, 'turn-timeout': `瞄准超时，${side}行动`, finished: '比赛结束' };
         const result = state.result?.winnerId === null ? '平局'
             : state.result?.winnerId === 'blue' ? '蓝方获胜' : state.result ? '红方获胜' : '';
+        const turnSeconds = Math.ceil(state.clock.turnRemainingMs / 1000);
         const title = this.paused ? '已暂停，回到画面继续'
             : state.phase === 'Finished' ? `比赛结束 · ${result}`
-                : gesture ? `力度 ${Math.round((gesture.aim?.power ?? 0) * 100)}% · 松手发射` : reasons[status.reason];
-        const seconds = Math.ceil(state.clock.remainingMs / 1000);
-        const turnSeconds = Math.ceil(state.clock.turnRemainingMs / 1000);
-        const secondPart = seconds % 60;
-        const secondText = secondPart < 10 ? `0${secondPart}` : String(secondPart);
+                : gesture ? `力度 ${Math.round((gesture.aim?.power ?? 0) * 100)}% · 松手发射`
+                    : state.phase === 'Aiming' && turnSeconds <= 5 ? `${side}行动 · 仅剩 ${turnSeconds} 秒`
+                        : reasons[status.reason];
         this.screen.render(state, gesture, this.message || title,
-            `蓝 ${state.score.blue ?? 0} : ${state.score.red ?? 0} 红　比赛 ${Math.floor(seconds / 60)}:${secondText}`
-            + `${state.phase === 'Aiming' ? `　回合 ${turnSeconds} 秒` : ''}\n`
-            + `第 ${state.turnNumber} 回合 · 先手 ${state.random.firstOperatorId === 'blue' ? '蓝方' : '红方'}`
+            `第 ${state.turnNumber} 回合 · 先手 ${state.random.firstOperatorId === 'blue' ? '蓝方' : '红方'}`
             + `${status.droppedSeconds > 0.01 ? ' · 卡顿已限步' : ''}`,
-            this.physics?.getBallAngle?.() ?? 0);
+            this.physics?.getBallAngle?.() ?? 0, this.feedbackOverlay);
     }
-    onDestroy(): void { this.physics?.dispose(); this.screen?.dispose(); this.lineupView?.dispose(); }
+    onDestroy(): void {
+        this.audioSource?.stop(); this.physics?.dispose(); this.screen?.dispose(); this.lineupView?.dispose();
+        this.warehouseView?.dispose();
+    }
 }

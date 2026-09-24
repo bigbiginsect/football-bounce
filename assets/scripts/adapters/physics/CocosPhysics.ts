@@ -1,5 +1,5 @@
 import { Node, RigidBody2D, CircleCollider2D, BoxCollider2D, ERigidBody2DType,
-    PhysicsSystem2D, Vec2, PHYSICS_2D_PTM_RATIO } from 'cc';
+    PhysicsSystem2D, Vec2, PHYSICS_2D_PTM_RATIO, Contact2DType, IPhysics2DContact } from 'cc';
 import type { Command } from '../../core/Command';
 import type { BodyState, GameState } from '../../core/GameState';
 import type { PhysicsPort, PhysicsFrame } from '../../core/PhysicsPort';
@@ -15,6 +15,7 @@ export class CocosPhysics implements PhysicsPort {
     private readonly bodies = new Map<string, RigidBody2D>();
     private readonly impulses = new Map<string, number>();
     private readonly system = PhysicsSystem2D.instance;
+    private strongestImpact = 0;
     private readonly previous = { auto: this.system.autoSimulation, gravity: this.system.gravity.clone(),
         enabled: this.system.enable, mask: this.system.collisionMatrix[1] };
 
@@ -63,10 +64,27 @@ export class CocosPhysics implements PhysicsPort {
         collider.radius = radius * PHYSICS_2D_PTM_RATIO;
         collider.density = mass / (Math.PI * radius * radius);
         collider.friction = c.friction; collider.restitution = ball ? c.ballRestitution : c.playerRestitution;
+        collider.on(Contact2DType.POST_SOLVE, this.recordImpact, this);
         node.active = true; this.bodies.set(id, body);
     }
 
+    private recordImpact(contact: IPhysics2DContact): void {
+        const impulse = contact.getImpulse();
+        if (!impulse) return;
+        for (const value of impulse.normalImpulses) {
+            if (Number.isFinite(value)) this.strongestImpact = Math.max(this.strongestImpact, Math.abs(value));
+        }
+    }
+
+    /** 只供本地音效消费；每次读取后清零，不能作为规则或联网事实。 */
+    consumeStrongestImpact(): number {
+        const value = this.strongestImpact;
+        this.strongestImpact = 0;
+        return value;
+    }
+
     restore(state: GameState): void {
+        this.strongestImpact = 0;
         for (const [id, data] of [...state.players.map(p => [p.instanceId, p] as const), ['ball', state.ball] as const]) {
             const body = this.bodies.get(id)!;
             body.node.setPosition(data.position.x * PHYSICS_2D_PTM_RATIO, data.position.y * PHYSICS_2D_PTM_RATIO);
@@ -119,6 +137,7 @@ export class CocosPhysics implements PhysicsPort {
     /** 仅供本地球面图案显示；角度尚未进入跨设备权威状态。 */
     getBallAngle(): number { return this.bodies.get('ball')!.node.angle; }
     stop(): void {
+        this.strongestImpact = 0;
         for (const body of this.bodies.values()) { body.linearVelocity = new Vec2(); body.angularVelocity = 0; }
     }
     dispose(): void {

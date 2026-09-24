@@ -1,11 +1,11 @@
 {
-  "version": "players-002",
+  "version": "players-003",
   "players": [
-    { "id": "messi", "name": "梅西", "portraitPath": "portraits/messi", "weight": 55, "power": 84, "precision": 96 },
-    { "id": "cristiano-ronaldo", "name": "C 罗", "portraitPath": "portraits/cristiano-ronaldo", "weight": 78, "power": 96, "precision": 82 },
-    { "id": "mbappe", "name": "姆巴佩", "portraitPath": "portraits/mbappe", "weight": 62, "power": 90, "precision": 82 },
-    { "id": "de-bruyne", "name": "德布劳内", "portraitPath": "portraits/de-bruyne", "weight": 70, "power": 84, "precision": 94 },
-    { "id": "van-dijk", "name": "范戴克", "portraitPath": "portraits/van-dijk", "weight": 95, "power": 77, "precision": 78 },
-    { "id": "haaland", "name": "哈兰德", "portraitPath": "portraits/haaland", "weight": 90, "power": 94, "precision": 72 }
+    { "id": "messi", "name": "梅西", "portraitPath": "portraits/messi", "weight": 55, "power": 84, "precision": 96, "mentality": 96, "curve": 98, "quip": "球一到脚下，防守人的导航就开始重新规划。" },
+    { "id": "cristiano-ronaldo", "name": "C 罗", "portraitPath": "portraits/cristiano-ronaldo", "weight": 78, "power": 96, "precision": 82, "mentality": 95, "curve": 86, "quip": "只要还有一秒，他就觉得记分牌还能再跳一下。" },
+    { "id": "mbappe", "name": "姆巴佩", "portraitPath": "portraits/mbappe", "weight": 62, "power": 90, "precision": 82, "mentality": 88, "curve": 84, "quip": "你刚看清他的背影，他已经在门前等球了。" },
+    { "id": "de-bruyne", "name": "德布劳内", "portraitPath": "portraits/de-bruyne", "weight": 70, "power": 84, "precision": 94, "mentality": 92, "curve": 96, "quip": "传球线路别人看不见，他已经提前画好了。" },
+    { "id": "van-dijk", "name": "范戴克", "portraitPath": "portraits/van-dijk", "weight": 95, "power": 77, "precision": 78, "mentality": 95, "curve": 72, "quip": "站在那里就像一扇门，而且今天不打算开。" },
+    { "id": "haaland", "name": "哈兰德", "portraitPath": "portraits/haaland", "weight": 90, "power": 94, "precision": 72, "mentality": 89, "curve": 78, "quip": "皮球进禁区以后，他通常只问一句：吃了吗？" }
   ]
 }

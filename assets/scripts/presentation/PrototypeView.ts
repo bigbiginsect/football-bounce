@@ -5,6 +5,8 @@ import type { PrototypeConfig } from '../core/PrototypeConfig';
 import type { LaunchGesture } from '../core/LaunchGesture';
 import type { PlayerCatalog } from '../core/PlayerCatalog';
 import { getPlayerTemplate, playerGameplayValues } from '../core/PlayerCatalog';
+import type { MatchOverlay, MatchSide } from './MatchFeedback';
+import { matchClock, sideLabel } from './MatchFeedback';
 
 const pixelsPerMeter = 80;
 /** 位置读取权威状态；本地皮球图案角度读取物理刚体。物理节点不挂在本视图下。 */
@@ -19,8 +21,15 @@ export class PrototypeView {
     private readonly aim: Graphics;
     private readonly status: Label;
     private readonly info: Label;
-    private readonly restartButton: Node;
-    private readonly editButton: Node;
+    private readonly score: Label;
+    private readonly clock: Label;
+    private readonly activeRestartButton: Node;
+    private readonly eventPanel: Node;
+    private readonly eventTitle: Label;
+    private readonly eventDetail: Label;
+    private readonly resultPanel: Node;
+    private readonly resultTitle: Label;
+    private readonly resultScore: Label;
 
     constructor(parent: Node, private readonly config: PrototypeConfig, restart: () => void,
         editLineups: () => void,
@@ -29,8 +38,11 @@ export class PrototypeView {
         if (!camera) throw new Error('球场视图需要 Canvas 的渲染相机');
         this.camera = camera;
         this.root = this.node(parent, 'Match', 720, 1280);
-        this.label(this.root, '足球弹弹乐 · 本地双人', 575, 30);
-        this.label(this.root, '轮到哪一方，就拖动该方球员反向发射', 532, 21);
+        this.label(this.root, '足球弹弹乐 · 本地双人', 603, 30);
+        this.label(this.root, '拖动当前行动方球员，向相反方向发射', 563, 19);
+        const hud = this.panel(this.root, 'MatchHud', 640, 104, 0, 492, new Color(15, 31, 45, 225), 20);
+        this.score = this.label(hud, '', 22, 29);
+        this.clock = this.label(hud, '', -22, 21);
         const field = this.node(this.root, 'Field', config.fieldWidth * pixelsPerMeter, config.fieldHeight * pixelsPerMeter);
         this.field = field.getComponent(UITransform)!;
         const g = field.addComponent(Graphics);
@@ -51,11 +63,24 @@ export class PrototypeView {
         this.bodies = this.node(field, 'Bodies', w, h).addComponent(Graphics);
         this.portraitLayer = this.node(field, 'Portraits', w, h);
         this.aim = this.node(field, 'Aim', w, h).addComponent(Graphics);
-        this.status = this.label(this.root, '', 490, 22);
-        this.info = this.label(this.root, '', -500, 20);
-        this.restartButton = this.button('重新开始', 0, restart);
-        this.editButton = this.button('调整阵容', 155, editLineups);
-        this.editButton.active = false;
+        this.status = this.label(this.root, '', 431, 21);
+        this.info = this.label(this.root, '', -478, 19);
+        this.activeRestartButton = this.button(this.root, '重新开始', 0, -550, restart, 250);
+
+        this.eventPanel = this.panel(this.root, 'EventFeedback', 520, 174, 0, 20,
+            new Color(18, 30, 39, 238), 22);
+        this.eventTitle = this.label(this.eventPanel, '', 28, 40);
+        this.eventDetail = this.label(this.eventPanel, '', -30, 25);
+        this.eventPanel.active = false;
+
+        this.resultPanel = this.panel(this.root, 'MatchResult', 590, 370, 0, 12,
+            new Color(10, 23, 34, 248), 26);
+        this.resultTitle = this.label(this.resultPanel, '', 105, 42);
+        this.resultScore = this.label(this.resultPanel, '', 40, 31);
+        this.label(this.resultPanel, '比赛时间结束', -14, 20).color = new Color(177, 194, 202);
+        this.button(this.resultPanel, '再来一局', -137, -112, restart, 240);
+        this.button(this.resultPanel, '调整阵容', 137, -112, editLineups, 240);
+        this.resultPanel.active = false;
         this.label(this.root, `${config.version} · 标准模式 3 分钟 · 每队 5 人`, -612, 17);
     }
     private drawGrass(g: Graphics, width: number, height: number): void {
@@ -98,6 +123,13 @@ export class PrototypeView {
         const node = new Node(name); node.layer = parent.layer; parent.addChild(node);
         node.addComponent(UITransform).setContentSize(width, height); return node;
     }
+    private panel(parent: Node, name: string, width: number, height: number, x: number, y: number,
+        color: Color, radius: number): Node {
+        const node = this.node(parent, name, width, height); node.setPosition(x, y);
+        const graphics = node.addComponent(Graphics); graphics.fillColor = color;
+        graphics.roundRect(-width / 2, -height / 2, width, height, radius); graphics.fill();
+        return node;
+    }
     private label(parent: Node, text: string, y: number, size: number): Label {
         const node = this.node(parent, 'Text', 690, 90); node.setPosition(0, y);
         const label = node.addComponent(Label); label.string = text; label.fontSize = size;
@@ -105,11 +137,11 @@ export class PrototypeView {
         label.verticalAlign = Label.VerticalAlign.CENTER; label.color = new Color(235, 244, 242);
         return label;
     }
-    private button(text: string, x: number, action: () => void): Node {
-        const node = this.node(this.root, text, 270, 62); node.setPosition(x, -555);
+    private button(parent: Node, text: string, x: number, y: number, action: () => void, width: number): Node {
+        const node = this.node(parent, text, width, 62); node.setPosition(x, y);
         const g = node.addComponent(Graphics); g.fillColor = new Color(45, 69, 94);
-        g.roundRect(-135, -31, 270, 62, 12); g.fill();
-        const label = this.label(node, text, 0, 22); label.node.getComponent(UITransform)!.setContentSize(270, 62);
+        g.roundRect(-width / 2, -31, width, 62, 12); g.fill();
+        const label = this.label(node, text, 0, 22); label.node.getComponent(UITransform)!.setContentSize(width, 62);
         node.on(Node.EventType.TOUCH_END, action);
         return node;
     }
@@ -144,7 +176,7 @@ export class PrototypeView {
         return { x: local.x / pixelsPerMeter, y: local.y / pixelsPerMeter };
     }
     render(state: GameState, gesture: ReturnType<LaunchGesture['preview']>, status: string, info: string,
-        ballAngle = 0): void {
+        ballAngle = 0, feedback: MatchOverlay | null = null): void {
         const g = this.bodies; g.clear();
         for (const player of state.players) {
             g.fillColor = player.ownerId === 'blue' ? new Color(68, 167, 255) : new Color(245, 105, 102);
@@ -186,10 +218,33 @@ export class PrototypeView {
             a.moveTo(ex - direction.x * 12 + direction.y * 7, ey - direction.y * 12 - direction.x * 7);
             a.lineTo(ex, ey); a.lineTo(ex - direction.x * 12 - direction.y * 7, ey - direction.y * 12 + direction.x * 7); a.stroke();
         }
-        this.status.string = status; this.info.string = info;
+        const activeSide = state.activeOperatorId as MatchSide;
+        const turnSeconds = Math.max(0, Math.ceil(state.clock.turnRemainingMs / 1000));
+        const warning = state.phase === 'Aiming' && turnSeconds <= 5;
+        this.score.string = `蓝  ${state.score.blue ?? 0}  :  ${state.score.red ?? 0}  红`;
+        this.clock.string = `比赛 ${matchClock(state.clock.remainingMs)}`
+            + (state.phase === 'Aiming' ? `　·　回合 ${turnSeconds} 秒` : '　·　运动中');
+        this.clock.color = warning ? new Color(255, 115, 92) : new Color(210, 226, 231);
+        this.status.string = status;
+        this.status.color = warning ? new Color(255, 164, 80)
+            : activeSide === 'blue' ? new Color(115, 196, 255) : new Color(255, 143, 139);
+        this.info.string = info;
         const finished = state.phase === 'Finished';
-        this.editButton.active = finished;
-        this.restartButton.setPosition(finished ? -155 : 0, -555);
+        this.activeRestartButton.active = !finished;
+        this.resultPanel.active = finished;
+        if (finished) {
+            const winner = state.result?.winnerId as MatchSide | null | undefined;
+            this.resultTitle.string = winner === null ? '本场平局' : winner ? `${sideLabel(winner)}获胜` : '比赛结束';
+            this.resultTitle.color = winner === 'blue' ? new Color(105, 190, 255)
+                : winner === 'red' ? new Color(255, 129, 126) : new Color(255, 218, 112);
+            this.resultScore.string = `最终比分　蓝 ${state.score.blue ?? 0} : ${state.score.red ?? 0} 红`;
+        }
+        this.eventPanel.active = !finished && feedback !== null;
+        if (feedback && !finished) {
+            this.eventTitle.string = feedback.title;
+            this.eventTitle.color = feedback.type === 'goal' ? new Color(255, 219, 91) : new Color(255, 157, 91);
+            this.eventDetail.string = feedback.detail;
+        }
     }
     private drawBall(g: Graphics, x: number, y: number, radius: number, angleDegrees: number): void {
         g.fillColor = Color.WHITE; g.circle(x, y, radius); g.fill();

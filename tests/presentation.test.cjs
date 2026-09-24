@@ -14,6 +14,7 @@ class Color {
 }
 const cc = { _decorator: { ccclass: () => target => target },
   Component: class { enabledInHierarchy = true; }, Vec3, Color,
+  AudioClip: class {}, AudioSource: class { stop() {} playOneShot() {} },
   isValid: (node, strict) => node.valid && (!strict || !node.destroying) };
 function load(relative) {
   const filename = path.resolve(__dirname, '..', relative);
@@ -33,7 +34,10 @@ function load(relative) {
 const { Boot } = load('assets/scripts/presentation/Boot.ts');
 const { PrototypeView } = load('assets/scripts/presentation/PrototypeView.ts');
 const { LineupView } = load('assets/scripts/presentation/LineupView.ts');
+const { PlayerWarehouseView } = load('assets/scripts/presentation/PlayerWarehouseView.ts');
 const { CocosPhysics } = load('assets/scripts/adapters/physics/CocosPhysics.ts');
+const { MatchFeedbackTracker, matchClock, overlayFor } =
+  load('assets/scripts/presentation/MatchFeedback.ts');
 const { LocalMatch } = load('assets/scripts/application/LocalMatch.ts');
 const { LaunchGesture } = load('assets/scripts/core/LaunchGesture.ts');
 const { prototypeConfig, freezeConfig, createPrototypeState, createStandardMatchState } =
@@ -96,6 +100,64 @@ test('仓库球员增加后可横向滚动，滑动不触发替换', () => {
   assert.ok(view.scrollOffset > 0);
   assert.equal(edits.length, 0);
 });
+test('阵容页顶部或左边缘右滑达到阈值进入球员仓库，短滑回弹', () => {
+  const view = Object.create(LineupView.prototype); const progress = []; const complete = [];
+  view.local = point => point; view.navigationPoint = point => point;
+  view.navigation = { previewWarehouse: value => progress.push(value),
+    finishWarehouse: value => complete.push(value) };
+  view.touchStart(1, { x: -220, y: 500 });
+  view.touchMove(1, { x: -20, y: 505 });
+  view.touchEnd(1, { x: -20, y: 505 });
+  assert.ok(progress.at(-1) > 0.27); assert.deepEqual(complete, [true]);
+  view.touchStart(2, { x: -220, y: 500 });
+  view.touchMove(2, { x: -180, y: 502 });
+  view.touchEnd(2, { x: -180, y: 502 });
+  assert.deepEqual(complete, [true, false]);
+  view.touchStart(3, { x: -320, y: 0 });
+  view.touchMove(3, { x: -150, y: 2 });
+  view.touchEnd(3, { x: -150, y: 2 });
+  assert.deepEqual(complete, [true, false, true]);
+});
+function warehouseGestureFixture() {
+  const view = Object.create(PlayerWarehouseView.prototype); const commands = []; const back = [];
+  view.local = point => point; view.navigationPoint = point => point;
+  view.submit = command => commands.push(command);
+  view.navigation = { previewBack: progress => { view.preview = progress; }, finishBack: value => back.push(value) };
+  view.infoPanel = undefined; view.scrollOffset = 0;
+  view.playerCards = [{ id: 'haaland', node: { position: { x: -158, y: 238 },
+    setPosition(x, y) { this.position = { x, y }; } } }];
+  view.maxScroll = () => 220; view.placeCards = PlayerWarehouseView.prototype.placeCards.bind(view);
+  return { view, commands, back };
+}
+test('仓库槽位、信息和上场按钮产生明确意图', () => {
+  const { view, commands } = warehouseGestureFixture(); let info;
+  view.showInfo = id => { info = id; };
+  view.touchStart(1, { x: 0, y: 404 }); view.touchEnd(1, { x: 0, y: 404 });
+  assert.deepEqual(JSON.parse(JSON.stringify(commands)), [{ type: 'SelectSlot', slot: 2 }]);
+  // 第一张卡位于 viewport(-92) 内，按钮中心的根坐标分别为 (-230, 78) 与 (-86, 78)。
+  view.touchStart(2, { x: -230, y: 78 }); view.touchEnd(2, { x: -230, y: 78 });
+  assert.equal(info, 'haaland');
+  view.touchStart(3, { x: -86, y: 78 }); view.touchEnd(3, { x: -86, y: 78 });
+  assert.deepEqual(JSON.parse(JSON.stringify(commands.at(-1))),
+    { type: 'DeployPlayer', templateId: 'haaland' });
+});
+test('仓库顶部或右边缘左滑和返回按钮关闭页面，纵向拖动只滚动列表', () => {
+  const { view, commands, back } = warehouseGestureFixture();
+  view.touchStart(1, { x: 150, y: 530 }); view.touchMove(1, { x: -30, y: 526 });
+  view.touchEnd(1, { x: -30, y: 526 });
+  assert.ok(view.preview > 0.24); assert.deepEqual(back, [true]);
+  view.touchStart(2, { x: -250, y: 580 }); view.touchEnd(2, { x: -250, y: 580 });
+  assert.deepEqual(back, [true, true]);
+  view.touchStart(4, { x: 320, y: 0 }); view.touchMove(4, { x: 140, y: -2 });
+  view.touchEnd(4, { x: 140, y: -2 });
+  assert.deepEqual(back, [true, true, true]);
+  view.playerCards = Array.from({ length: 8 }, (_, index) => ({ id: `p${index}`,
+    node: { position: { x: index % 2 ? 158 : -158, y: 238 - Math.floor(index / 2) * 220 },
+      setPosition(x, y) { this.position = { x, y }; } } }));
+  view.touchStart(3, { x: 0, y: -100 }); view.touchMove(3, { x: 0, y: 50 });
+  view.touchEnd(3, { x: 0, y: 50 });
+  assert.ok(view.scrollOffset > 0); assert.equal(commands.length, 0);
+});
 function setup() {
   const boot = new Boot(); boot.config = config; boot.gesture = new LaunchGesture(config);
   const physics = { restore(state) { this.state = state; }, launch() {}, step() {}, stop() {},
@@ -156,8 +218,10 @@ function viewFixture() {
     moveTo(x, y) { ballPaths.push([x, y]); }, lineTo(x, y) { ballPaths.push([x, y]); },
     fill() { ballFills.push(this.fillColor); }, stroke() {} };
   screen.status = {}; screen.info = {};
-  screen.editButton = { active: false };
-  screen.restartButton = { setPosition() {} };
+  screen.score = {}; screen.clock = {};
+  screen.activeRestartButton = { active: true };
+  screen.eventPanel = { active: false }; screen.eventTitle = {}; screen.eventDetail = {};
+  screen.resultPanel = { active: false }; screen.resultTitle = {}; screen.resultScore = {};
   const circles = [];
   screen.powerCircle = { clear() { circles.length = 0; }, circle(x, y, radius) { circles.push({ x, y, radius }); }, fill() {} };
   const lines = [];
@@ -198,6 +262,64 @@ test('物理适配层限制线速度时不改写皮球自旋', () => {
   ball.angularVelocity = -100; physics.limitSpeeds();
   assert.equal(ball.angularVelocity, -100);
   assert.equal(player.angularVelocity, 0);
+});
+test('碰撞冲量只供表现层消费，读取后清零', () => {
+  const physics = Object.create(CocosPhysics.prototype); physics.strongestImpact = 0;
+  physics.recordImpact({ getImpulse: () => ({ normalImpulses: [0.12, -0.38], tangentImpulses: [] }) });
+  physics.recordImpact({ getImpulse: () => ({ normalImpulses: [0.2], tangentImpulses: [] }) });
+  assert.equal(physics.consumeStrongestImpact(), 0.38);
+  assert.equal(physics.consumeStrongestImpact(), 0);
+  physics.recordImpact({ getImpulse: () => null });
+  assert.equal(physics.consumeStrongestImpact(), 0);
+});
+test('反馈跟踪器对进球、瞄准超时和终局各只发出一次事件', () => {
+  const initial = createStandardMatchState('feedback', config, 7, catalog);
+  const tracker = new MatchFeedbackTracker(); tracker.reset(initial);
+  const other = initial.activeOperatorId === 'blue' ? 'red' : 'blue';
+  const goal = { ...initial, revision: initial.revision + 1, turnNumber: 2, activeOperatorId: other,
+    score: { ...initial.score, [initial.activeOperatorId]: 1 } };
+  let events = tracker.observe(goal, 'goal');
+  assert.deepEqual(JSON.parse(JSON.stringify(events)), [{ type: 'goal', scorer: initial.activeOperatorId,
+    score: { blue: goal.score.blue, red: goal.score.red } }]);
+  assert.equal(tracker.observe(goal, 'goal').length, 0);
+  const timeout = { ...goal, revision: goal.revision + 1, turnNumber: 3,
+    activeOperatorId: initial.activeOperatorId };
+  events = tracker.observe(timeout, 'turn-timeout');
+  assert.deepEqual(JSON.parse(JSON.stringify(events)), [{ type: 'turn-timeout',
+    expiredSide: other, activeSide: initial.activeOperatorId }]);
+  assert.equal(tracker.observe(timeout, 'turn-timeout').length, 0);
+  const finished = { ...timeout, revision: timeout.revision + 1, phase: 'Finished',
+    result: { winnerId: initial.activeOperatorId, reason: 'TimeExpired' } };
+  events = tracker.observe(finished, 'finished');
+  assert.deepEqual(JSON.parse(JSON.stringify(events)), [{ type: 'finished', winner: initial.activeOperatorId,
+    score: { blue: finished.score.blue, red: finished.score.red } }]);
+  assert.equal(tracker.observe(finished, 'finished').length, 0);
+});
+test('时钟和覆盖反馈文案来自状态变化结果', () => {
+  assert.equal(matchClock(180000), '3:00');
+  assert.equal(matchClock(59001), '1:00');
+  assert.equal(matchClock(-1), '0:00');
+  assert.deepEqual(JSON.parse(JSON.stringify(overlayFor({ type: 'goal', scorer: 'red',
+    score: { blue: 2, red: 3 } }))), { type: 'goal', title: '红方进球！', detail: '蓝 2  :  3 红' });
+  assert.deepEqual(JSON.parse(JSON.stringify(overlayFor({ type: 'turn-timeout', expiredSide: 'blue',
+    activeSide: 'red' }))), { type: 'turn-timeout', title: '蓝方瞄准超时', detail: '轮到红方行动' });
+});
+test('最后五秒高亮，事件覆盖层和终局面板按状态互斥显示', () => {
+  const { screen, state } = viewFixture();
+  const warning = { ...state, clock: { ...state.clock, turnRemainingMs: 5000 } };
+  screen.render(warning, null, '蓝方行动 · 仅剩 5 秒', '第 1 回合', 0,
+    { type: 'goal', title: '蓝方进球！', detail: '蓝 1 : 0 红' });
+  assert.equal(screen.clock.color.r, 255);
+  assert.equal(screen.eventPanel.active, true);
+  assert.equal(screen.eventTitle.string, '蓝方进球！');
+  const finished = { ...warning, phase: 'Finished', score: { blue: 2, red: 1 },
+    result: { winnerId: 'blue', reason: 'TimeExpired' } };
+  screen.render(finished, null, '比赛结束', '第 9 回合');
+  assert.equal(screen.resultPanel.active, true);
+  assert.equal(screen.eventPanel.active, false);
+  assert.equal(screen.activeRestartButton.active, false);
+  assert.equal(screen.resultTitle.string, '蓝方获胜');
+  assert.match(screen.resultScore.string, /蓝 2 : 1 红/);
 });
 test('白色虚线有间隔，精度总长不随力度变化，方向正确', () => {
   const { screen, state, lines } = viewFixture();

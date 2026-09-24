@@ -8,6 +8,11 @@ export interface PlayerTemplate {
     readonly weight: number;
     readonly power: number;
     readonly precision: number;
+    /** 展示用设计评分；规则效果尚未启用。 */
+    readonly mentality: number;
+    /** 展示用设计评分；规则效果尚未启用。 */
+    readonly curve: number;
+    readonly quip: string;
     readonly skill?: { readonly id: string; readonly params: Readonly<Record<string, string | number | boolean>> };
 }
 
@@ -33,10 +38,11 @@ export function parsePlayerCatalog(input: unknown): PlayerCatalog {
         }
         if (ids.has(entry.id)) throw new Error(`球员 ID 重复：${entry.id}`);
         ids.add(entry.id);
-        for (const key of ['weight', 'power', 'precision'] as const) {
+        for (const key of ['weight', 'power', 'precision', 'mentality', 'curve'] as const) {
             if (typeof entry[key] !== 'number' || !Number.isInteger(entry[key])
                 || entry[key] < 0 || entry[key] > 100) throw new Error(`球员 ${entry.id} 的 ${key} 无效`);
         }
+        if (!text(entry.quip) || entry.quip.length > 80) throw new Error(`球员 ${entry.id} 的 quip 无效`);
         let skill: PlayerTemplate['skill'];
         if (entry.skill !== undefined && entry.skill !== null) {
             if (!object(entry.skill) || !text(entry.skill.id) || !object(entry.skill.params)) {
@@ -55,7 +61,8 @@ export function parsePlayerCatalog(input: unknown): PlayerCatalog {
         }
         return Object.freeze({ id: entry.id, name: entry.name, portraitPath: entry.portraitPath,
             weight: entry.weight as number, power: entry.power as number,
-            precision: entry.precision as number, ...(skill ? { skill } : {}) });
+            precision: entry.precision as number, mentality: entry.mentality as number,
+            curve: entry.curve as number, quip: entry.quip, ...(skill ? { skill } : {}) });
     });
     return Object.freeze({ version: input.version, players: Object.freeze(players) });
 }
