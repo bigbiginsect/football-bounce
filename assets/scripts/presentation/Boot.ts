@@ -291,9 +291,12 @@ export class Boot extends Component {
             const overlay = overlayFor(event);
             if (overlay) {
                 this.feedbackOverlay = overlay;
-                this.feedbackSeconds = event.type === 'goal' ? 1.25 : 0.95;
+                this.feedbackSeconds = event.type === 'goal' || event.type === 'kickoff-violation' ? 1.25 : 0.95;
             }
             if (event.type === 'goal') { this.playCue('goal'); suppressCollision = true; }
+            else if (event.type === 'kickoff-violation') {
+                this.playCue('timeout', 0.9); suppressCollision = true;
+            }
             else if (event.type === 'turn-timeout') this.playCue('timeout', 0.85);
             else { this.playCue('finish'); suppressCollision = true; }
         }
@@ -319,7 +322,8 @@ export class Boot extends Component {
         const side = state.activeOperatorId === 'blue' ? '蓝方' : '红方';
         const reasons = { ready: `${side}行动`, moving: '运动中，请等待停止', stopped: `${side}行动`,
             timeout: `运动超时，${side}行动`, invalid: `物理状态异常，${side}行动`,
-            goal: `进球！${side}开球`, 'turn-timeout': `瞄准超时，${side}行动`, finished: '比赛结束' };
+            goal: `进球！${side}开球`, 'kickoff-violation': `开球违例，换${side}开球`,
+            'turn-timeout': `瞄准超时，${side}行动`, finished: '比赛结束' };
         const result = state.result?.winnerId === null ? '平局'
             : state.result?.winnerId === 'blue' ? '蓝方获胜' : state.result ? '红方获胜' : '';
         const turnSeconds = Math.ceil(state.clock.turnRemainingMs / 1000);

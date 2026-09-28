@@ -194,7 +194,11 @@ export class PrototypeView {
             const player = state.players.find(p => p.instanceId === gesture.playerId)!;
             const x = player.position.x * pixelsPerMeter; const y = player.position.y * pixelsPerMeter;
             const power = Math.max(0, Math.min(1, gesture.aim?.power ?? 0));
-            const radius = this.config.playerRadius + (this.config.powerCircleMaxRadius - this.config.playerRadius) * power;
+            const maxRadius = this.catalog
+                ? playerGameplayValues(getPlayerTemplate(this.catalog, player.templateId), this.config)
+                    .powerCircleMaxRadius
+                : this.config.powerCircleMaxRadius;
+            const radius = this.config.playerRadius + (maxRadius - this.config.playerRadius) * power;
             powerCircle.fillColor = new Color(255, 205, 135, Math.round(255 * this.config.powerCircleOpacity));
             powerCircle.circle(x, y, radius * pixelsPerMeter); powerCircle.fill();
         }
@@ -202,21 +206,35 @@ export class PrototypeView {
             const player = state.players.find(p => p.instanceId === gesture.playerId)!;
             const { direction } = gesture.aim;
             const x = player.position.x * pixelsPerMeter; const y = player.position.y * pixelsPerMeter;
-            // 精度决定可见瞄准长度；力度只影响发射冲量和百分比提示。
+            // 精度决定可见瞄准长度；力量决定力度盘上限，二者都由球员配置只读派生。
             const length = (this.catalog
                 ? playerGameplayValues(getPlayerTemplate(this.catalog, player.templateId), this.config).aimLength
                 : this.config.aimLength) * pixelsPerMeter;
-            const ex = x + direction.x * length; const ey = y + direction.y * length;
-            a.strokeColor = Color.WHITE; a.lineWidth = 3;
             const dash = this.config.aimDashLength * pixelsPerMeter;
             const spacing = (this.config.aimDashLength + this.config.aimDashGap) * pixelsPerMeter;
-            for (let offset = 0; offset < length; offset += spacing) {
-                const end = Math.min(offset + dash, length);
-                a.moveTo(x + direction.x * offset, y + direction.y * offset);
-                a.lineTo(x + direction.x * end, y + direction.y * end);
-            }
-            a.moveTo(ex - direction.x * 12 + direction.y * 7, ey - direction.y * 12 - direction.x * 7);
-            a.lineTo(ex, ey); a.lineTo(ex - direction.x * 12 - direction.y * 7, ey - direction.y * 12 + direction.x * 7); a.stroke();
+            const drawDashes = (offsetX: number, offsetY: number): void => {
+                let lastEnd = 0;
+                for (let offset = 0; offset < length; offset += spacing) {
+                    const end = Math.min(offset + dash, length);
+                    a.moveTo(x + direction.x * offset + offsetX, y + direction.y * offset + offsetY);
+                    a.lineTo(x + direction.x * end + offsetX, y + direction.y * end + offsetY);
+                    lastEnd = end;
+                }
+                // 用短平线明确精度长度的准确终点；这是钝头收尾，不形成箭头或尖角。
+                if (lastEnd < length - 1e-6) {
+                    const capStart = Math.max(lastEnd, length - dash * 0.35);
+                    a.moveTo(x + direction.x * capStart + offsetX, y + direction.y * capStart + offsetY);
+                    a.lineTo(x + direction.x * length + offsetX, y + direction.y * length + offsetY);
+                }
+                a.stroke();
+            };
+            // 深色投影、青白主体和窄高光组成三层虚线；末端保持平直，不再绘制箭头尖角。
+            a.strokeColor = new Color(9, 37, 51, 185); a.lineWidth = 8;
+            drawDashes(2.5, -3);
+            a.strokeColor = new Color(151, 231, 238, 245); a.lineWidth = 5;
+            drawDashes(0, 0);
+            a.strokeColor = new Color(255, 255, 255, 235); a.lineWidth = 2;
+            drawDashes(-direction.y * 1.2, direction.x * 1.2);
         }
         const activeSide = state.activeOperatorId as MatchSide;
         const turnSeconds = Math.max(0, Math.ceil(state.clock.turnRemainingMs / 1000));

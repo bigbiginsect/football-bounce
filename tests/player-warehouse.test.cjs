@@ -40,3 +40,19 @@ test('蓝红两队分别保留仓库选中槽位和上阵结果', () => {
   const blue = warehouse.getSnapshot();
   assert.equal(blue.selectedSlot, 4); assert.equal(blue.active[4], 'haaland');
 });
+
+test('仓库阵型命令更新当前队站位，不改变球员顺序和所选槽位', () => {
+  const lineups = new LineupEditor(catalog, config);
+  const warehouse = new PlayerWarehouse(catalog, lineups);
+  warehouse.execute({ type: 'SelectSlot', slot: 3 });
+  const before = warehouse.getSnapshot();
+  assert.equal(before.formationId, '2-1-2');
+  assert.deepEqual(before.formations.map(item => item.id), ['2-1-2', '2-2-1', '1-2-2']);
+  assert.equal(warehouse.execute({ type: 'SelectFormation', formationId: '2-2-1' }), true);
+  const changed = warehouse.getSnapshot();
+  assert.equal(changed.formationId, '2-2-1'); assert.equal(changed.selectedSlot, 3);
+  assert.deepEqual(changed.active, before.active); assert.notDeepEqual(changed.slotPositions, before.slotPositions);
+  assert.equal(warehouse.execute({ type: 'SelectFormation', formationId: 'missing' }), false);
+  lineups.execute({ type: 'ConfirmSide' });
+  assert.equal(warehouse.getSnapshot().formationId, '2-1-2');
+});

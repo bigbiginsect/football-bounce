@@ -42,9 +42,12 @@ test('评分映射以 50 分为现有基准并保持单调', () => {
   assert.equal(middle.mass, config.playerMass);
   assert.equal(middle.maxImpulse, config.maxImpulse);
   assert.equal(middle.aimLength, config.aimLength);
+  assert.equal(middle.powerCircleMaxRadius, config.powerCircleMaxRadius);
   const low = playerGameplayValues({ ...base, weight: 0, power: 0, precision: 0 }, config);
   const high = playerGameplayValues({ ...base, weight: 100, power: 100, precision: 100 }, config);
-  for (const key of ['mass', 'maxImpulse', 'aimLength']) assert.ok(low[key] < middle[key] && middle[key] < high[key]);
+  for (const key of ['mass', 'maxImpulse', 'aimLength', 'powerCircleMaxRadius']) {
+    assert.ok(low[key] < middle[key] && middle[key] < high[key]);
+  }
   assert.ok(playerGameplayValues(getPlayerTemplate(catalog, 'van-dijk'), config).mass
     > playerGameplayValues(getPlayerTemplate(catalog, 'messi'), config).mass);
 });
@@ -68,7 +71,7 @@ test('传入阵容建立独立实例，目录版本和自选位置经过序列�
   lineups.red[0].position = { x: 2, y: 4 };
   const state = createStandardMatchState('selected', config, 7, catalog, lineups);
   assert.equal(state.catalogVersion, catalog.version);
-  assert.equal(state.schemaVersion, 3);
+  assert.equal(state.schemaVersion, 4);
   assert.equal(state.players[0].templateId, 'van-dijk');
   assert.deepEqual(state.players[0].position, { x: -2, y: -4 });
   assert.equal(state.players[0].instanceId, 'blue-1');
@@ -83,7 +86,8 @@ test('传入阵容建立独立实例，目录版本和自选位置经过序列�
     stop() {}
   }
   const physics = new GoalPhysics();
-  const match = new LocalMatch(state, physics, config);
+  const openPlayState = { ...state, kickoff: { ...state.kickoff, pending: false } };
+  const match = new LocalMatch(openPlayState, physics, config);
   const owner = state.activeOperatorId;
   const chosen = state.players.find(player => player.ownerId === owner);
   assert.equal(match.execute({ type: 'Launch', commandId: 'goal-1', matchId: state.matchId,

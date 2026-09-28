@@ -1,6 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { LineupEditor } = require('../.test-output/application/LineupEditor.js');
+const { formationPositions } = require('../.test-output/core/Lineup.js');
 const { parsePlayerCatalog } = require('../.test-output/core/PlayerCatalog.js');
 const { freezeConfig, prototypeConfig, createStandardMatchState } =
   require('../.test-output/core/PrototypeConfig.js');
@@ -45,4 +46,24 @@ test('场上球员交换槽位，确认流程保留选择并输出合法比赛�
   assert.equal(match.players[0].templateId, 'mbappe');
   assert.equal(match.players[7].templateId, 'haaland');
   assert.deepEqual(match.kickoff.players[7].position, { x: 0, y: 3 });
+});
+
+test('双方阵型分别保存、改变开局坐标，并能从已确认阵容恢复', () => {
+  const editor = new LineupEditor(catalog, config);
+  const bluePlayers = [...editor.getSnapshot().blue];
+  assert.equal(editor.getSnapshot().formationId, '2-1-2');
+  assert.equal(editor.execute({ type: 'SelectFormation', formationId: '2-2-1' }), true);
+  assert.deepEqual(editor.getSnapshot().blue, bluePlayers);
+  assert.equal(editor.execute({ type: 'SelectFormation', formationId: 'missing' }), false);
+  assert.equal(editor.execute({ type: 'ConfirmSide' }), true);
+  assert.equal(editor.getSnapshot().formationId, '2-1-2');
+  assert.equal(editor.execute({ type: 'SelectFormation', formationId: '1-2-2' }), true);
+  assert.equal(editor.execute({ type: 'ConfirmSide' }), true);
+  const chosen = editor.toMatchLineups();
+  assert.deepEqual(chosen.blue.map(item => item.position), formationPositions('2-2-1', 'blue'));
+  assert.deepEqual(chosen.red.map(item => item.position), formationPositions('1-2-2', 'red'));
+  const reopened = new LineupEditor(catalog, config, chosen);
+  assert.equal(reopened.getSnapshot().formationId, '2-2-1');
+  reopened.execute({ type: 'ConfirmSide' });
+  assert.equal(reopened.getSnapshot().formationId, '1-2-2');
 });

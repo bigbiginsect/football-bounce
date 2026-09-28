@@ -1,5 +1,5 @@
-import type { MatchLineups } from '../core/Lineup';
-import { defaultLineups, validateLineups } from '../core/Lineup';
+import type { FormationId, MatchLineups } from '../core/Lineup';
+import { defaultLineups, formationPositions, inferFormationId, isFormationId, validateLineups } from '../core/Lineup';
 import type { PlayerCatalog } from '../core/PlayerCatalog';
 import type { PrototypeConfig } from '../core/PrototypeConfig';
 
@@ -7,6 +7,7 @@ export type TeamSide = 'blue' | 'red';
 export type LineupEdit =
     | { readonly type: 'ReplaceFromBench'; readonly templateId: string; readonly slot: number }
     | { readonly type: 'SwapSlots'; readonly from: number; readonly to: number }
+    | { readonly type: 'SelectFormation'; readonly formationId: FormationId }
     | { readonly type: 'ConfirmSide' }
     | { readonly type: 'BackToBlue' };
 
@@ -15,14 +16,16 @@ export interface LineupDraftSnapshot {
     readonly blue: readonly string[];
     readonly red: readonly string[];
     readonly bench: readonly string[];
+    readonly formationId: FormationId;
     readonly ready: boolean;
 }
 
-/** 赛前阵容的唯一写入口。槽位保存模板 ID，固定坐标始终来自默认站位。 */
+/** 赛前阵容的唯一写入口。槽位保存模板 ID，开局坐标来自当前队选择的阵型。 */
 export class LineupEditor {
     private side: TeamSide = 'blue';
     private ready = false;
     private readonly teams: Record<TeamSide, string[]>;
+    private readonly formationIds: Record<TeamSide, FormationId>;
 
     constructor(private readonly catalog: PlayerCatalog, private readonly config: PrototypeConfig,
         previous: MatchLineups = defaultLineups()) {
@@ -31,6 +34,10 @@ export class LineupEditor {
             blue: checked.blue.map(item => item.templateId),
             red: checked.red.map(item => item.templateId),
         };
+        this.formationIds = {
+            blue: inferFormationId(checked.blue, 'blue'),
+            red: inferFormationId(checked.red, 'red'),
+        };
     }
 
     getSnapshot(): LineupDraftSnapshot {
@@ -38,7 +45,7 @@ export class LineupEditor {
         return {
             side: this.side, blue: [...this.teams.blue], red: [...this.teams.red],
             bench: this.catalog.players.filter(player => !selected.has(player.id)).map(player => player.id),
-            ready: this.ready,
+            formationId: this.formationIds[this.side], ready: this.ready,
         };
     }
 
@@ -57,6 +64,10 @@ export class LineupEditor {
             [team[edit.from], team[edit.to]] = [team[edit.to], team[edit.from]];
             return true;
         }
+        case 'SelectFormation':
+            if (!isFormationId(edit.formationId)) return false;
+            this.formationIds[this.side] = edit.formationId;
+            return true;
         case 'ConfirmSide':
             if (this.side === 'blue') this.side = 'red';
             else this.ready = true;
@@ -69,10 +80,13 @@ export class LineupEditor {
 
     toMatchLineups(): MatchLineups {
         if (!this.ready) throw new Error('双方尚未确认阵容');
-        const positions = defaultLineups();
+        const positions = {
+            blue: formationPositions(this.formationIds.blue, 'blue'),
+            red: formationPositions(this.formationIds.red, 'red'),
+        };
         return validateLineups({
-            blue: this.teams.blue.map((templateId, slot) => ({ templateId, position: positions.blue[slot].position })),
-            red: this.teams.red.map((templateId, slot) => ({ templateId, position: positions.red[slot].position })),
+            blue: this.teams.blue.map((templateId, slot) => ({ templateId, position: positions.blue[slot] })),
+            red: this.teams.red.map((templateId, slot) => ({ templateId, position: positions.red[slot] })),
         }, this.catalog, this.config);
     }
 

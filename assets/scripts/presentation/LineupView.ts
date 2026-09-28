@@ -3,6 +3,7 @@ import { Canvas, Camera, Color, Graphics, Label, Mask, Node, Sprite, SpriteFrame
 import type { Vector2Data } from '../core/GameState';
 import type { PlayerCatalog } from '../core/PlayerCatalog';
 import { getPlayerTemplate } from '../core/PlayerCatalog';
+import { formationPositions } from '../core/Lineup';
 import type { LineupDraftSnapshot, LineupEdit } from '../application/LineupEditor';
 
 type Source = { kind: 'bench'; templateId: string } | { kind: 'slot'; slot: number; templateId: string };
@@ -33,6 +34,7 @@ export class LineupView {
     private readonly backButton: Node;
     private readonly targetRing: Graphics;
     private snapshot!: LineupDraftSnapshot;
+    private slotPoints: readonly Vector2Data[] = slots;
     private readonly slotCards: Node[] = [];
     private readonly benchCards: Node[] = [];
     private scrollOffset = 0;
@@ -94,13 +96,17 @@ export class LineupView {
         this.confirmLabel.string = snapshot.side === 'blue' ? '确认蓝队  →' : '确认红队  ·  开始比赛';
         this.backButton.active = snapshot.side === 'red';
         this.benchTitle.string = `球员仓库  ${snapshot.bench.length} 人`;
+        this.slotPoints = formationPositions(snapshot.formationId, 'blue').map(point => ({
+            x: point.x * 82.5,
+            y: -6 + (point.y + 3) * (point.y < -3 ? 180 : 144),
+        }));
         for (const node of this.slotCards) node.destroy();
         for (const node of this.benchCards) node.destroy();
         this.slotCards.length = 0; this.benchCards.length = 0;
         const selected = snapshot[snapshot.side];
         selected.forEach((id, index) => {
             const card = this.playerCard(this.slotLayer, id, 108, 117, true);
-            card.setPosition(slots[index].x, slots[index].y);
+            card.setPosition(this.slotPoints[index].x, this.slotPoints[index].y);
             this.slotCards.push(card);
         });
         snapshot.bench.forEach(id => {
@@ -214,7 +220,7 @@ export class LineupView {
         return Math.abs(p.x) <= viewportWidth / 2 && Math.abs(p.y + 423) <= 84;
     }
     private hitSlot(p: Vector2Data): number | null {
-        const index = slots.findIndex(slot =>
+        const index = this.slotPoints.findIndex(slot =>
             Math.abs(p.x - slot.x) <= 61 && Math.abs(p.y - 135 - slot.y) <= 67);
         return index < 0 ? null : index;
     }
@@ -222,7 +228,7 @@ export class LineupView {
         this.targetRing.clear();
         if (index === null) return;
         this.targetRing.strokeColor = new Color(255, 219, 113); this.targetRing.lineWidth = 6;
-        this.targetRing.roundRect(slots[index].x - 59, slots[index].y - 65, 118, 130, 18);
+        this.targetRing.roundRect(this.slotPoints[index].x - 59, this.slotPoints[index].y - 65, 118, 130, 18);
         this.targetRing.stroke();
     }
     private local(point: Vector2Data): Vector2Data {

@@ -73,11 +73,13 @@ export function getPlayerTemplate(catalog: PlayerCatalog, id: string): PlayerTem
     return player;
 }
 
-/** 评分 50 对应 stage2 物理基准；只改变质量、发射冲量和辅助瞄准长度。 */
+/** 评分 50 对应 stage2 基准；力量同时决定实际冲量与力度盘最大视觉尺寸。 */
 export function playerGameplayValues(template: PlayerTemplate, config: PrototypeConfig) {
+    const powerScale = 0.9 + template.power / 500;
     return {
         mass: config.playerMass * (0.9 + template.weight / 500),
-        maxImpulse: config.maxImpulse * (0.9 + template.power / 500),
+        maxImpulse: config.maxImpulse * powerScale,
         aimLength: config.aimLength * (0.8 + template.precision / 250),
+        powerCircleMaxRadius: config.powerCircleMaxRadius * (0.8 + template.power / 250),
     };
 }

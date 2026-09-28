@@ -15,6 +15,10 @@ class Color {
 const cc = { _decorator: { ccclass: () => target => target },
   Component: class { enabledInHierarchy = true; }, Vec3, Color,
   AudioClip: class {}, AudioSource: class { stop() {} playOneShot() {} },
+  tween: target => { let values; let done; return {
+    to(_duration, next) { values = next; return this; }, call(callback) { done = callback; return this; },
+    start() { if (values?.position) target.setPosition(values.position.x, values.position.y); done?.(); },
+  }; },
   isValid: (node, strict) => node.valid && (!strict || !node.destroying) };
 function load(relative) {
   const filename = path.resolve(__dirname, '..', relative);
@@ -49,7 +53,9 @@ const catalog = parsePlayerCatalog(require('../assets/resources/config/players.j
 function lineupGestureFixture() {
   const view = Object.create(LineupView.prototype);
   view.snapshot = { side: 'blue', blue: ['van-dijk', 'cristiano-ronaldo', 'de-bruyne', 'messi', 'mbappe'],
-    red: [], bench: ['haaland'] };
+    red: [], bench: ['haaland'], formationId: '2-1-2' };
+  view.slotPoints = [{ x: -132, y: -150 }, { x: 132, y: -150 }, { x: 0, y: -6 },
+    { x: -132, y: 138 }, { x: 132, y: 138 }];
   view.root = { children: [] };
   view.scrollOffset = 0;
   view.benchCards = [{ position: { x: -234, y: 0 }, setPosition(x, y) { this.position = { x, y }; } }];
@@ -123,40 +129,100 @@ function warehouseGestureFixture() {
   view.local = point => point; view.navigationPoint = point => point;
   view.submit = command => commands.push(command);
   view.navigation = { previewBack: progress => { view.preview = progress; }, finishBack: value => back.push(value) };
-  view.infoPanel = undefined; view.scrollOffset = 0;
-  view.playerCards = [{ id: 'haaland', node: { position: { x: -158, y: 238 },
+  view.infoPanel = undefined; view.scrollOffset = 0; view.drawerProgress = 0; view.drawerAnimating = false;
+  view.formationFocused = false;
+  view.drawer = { position: { x: 0, y: -420 }, setPosition(x, y) { this.position = { x, y }; } };
+  view.drawerHint = { string: '' }; view.viewport = { position: { x: 0, y: 0 } };
+  view.compactFormation = { active: true }; view.focusedFormation = { active: false };
+  view.snapshot = { slotPositions: [{ x: -1.6, y: -3.8 }, { x: 1.6, y: -3.8 }, { x: 0, y: -3 },
+    { x: -1.25, y: -2 }, { x: 1.25, y: -2 }] };
+  view.formationButtons = [{ id: '2-2-1', node: { position: { x: 0, y: 472 } } }];
+  view.activeCards = [{ slot: 2, node: { position: { x: 0, y: 312 },
+    setPosition(x, y) { this.position = { x, y }; } } }];
+  view.playerCards = [{ id: 'haaland', node: { position: { x: -158, y: 350 },
     setPosition(x, y) { this.position = { x, y }; } } }];
   view.maxScroll = () => 220; view.placeCards = PlayerWarehouseView.prototype.placeCards.bind(view);
+  view.snapDrawer = expanded => { view.snapped = expanded; view.setDrawerProgress(expanded ? 1 : 0); };
   return { view, commands, back };
 }
-test('仓库槽位、信息和上场按钮产生明确意图', () => {
+test('仓库阵型、槽位、信息和上场按钮产生明确意图', () => {
   const { view, commands } = warehouseGestureFixture(); let info;
   view.showInfo = id => { info = id; };
-  view.touchStart(1, { x: 0, y: 404 }); view.touchEnd(1, { x: 0, y: 404 });
-  assert.deepEqual(JSON.parse(JSON.stringify(commands)), [{ type: 'SelectSlot', slot: 2 }]);
-  // 第一张卡位于 viewport(-92) 内，按钮中心的根坐标分别为 (-230, 78) 与 (-86, 78)。
-  view.touchStart(2, { x: -230, y: 78 }); view.touchEnd(2, { x: -230, y: 78 });
+  view.touchStart(1, { x: 0, y: 472 }); view.touchEnd(1, { x: 0, y: 472 });
+  assert.equal(view.formationFocused, true); assert.equal(view.compactFormation.active, false);
+  assert.equal(view.focusedFormation.active, true); assert.equal(view.drawer.position.y, -890);
+  assert.equal(view.activeCards[0].node.position.y, 70);
+  view.touchStart(2, { x: 0, y: 70 }); view.touchEnd(2, { x: 0, y: 70 });
+  assert.deepEqual(JSON.parse(JSON.stringify(commands)), [
+    { type: 'SelectFormation', formationId: '2-2-1' }, { type: 'SelectSlot', slot: 2 },
+  ]);
+  // 阵型聚焦态第一张卡按钮的根坐标分别为 (-230, -608) 与 (-86, -608)。
+  view.touchStart(3, { x: -230, y: -608 }); view.touchEnd(3, { x: -230, y: -608 });
   assert.equal(info, 'haaland');
-  view.touchStart(3, { x: -86, y: 78 }); view.touchEnd(3, { x: -86, y: 78 });
+  view.touchStart(4, { x: -86, y: -608 }); view.touchEnd(4, { x: -86, y: -608 });
   assert.deepEqual(JSON.parse(JSON.stringify(commands.at(-1))),
     { type: 'DeployPlayer', templateId: 'haaland' });
 });
 test('仓库顶部或右边缘左滑和返回按钮关闭页面，纵向拖动只滚动列表', () => {
   const { view, commands, back } = warehouseGestureFixture();
-  view.touchStart(1, { x: 150, y: 530 }); view.touchMove(1, { x: -30, y: 526 });
-  view.touchEnd(1, { x: -30, y: 526 });
+  view.touchStart(1, { x: 150, y: 580 }); view.touchMove(1, { x: -30, y: 576 });
+  view.touchEnd(1, { x: -30, y: 576 });
   assert.ok(view.preview > 0.24); assert.deepEqual(back, [true]);
-  view.touchStart(2, { x: -250, y: 580 }); view.touchEnd(2, { x: -250, y: 580 });
+  view.touchStart(2, { x: -286, y: 592 }); view.touchEnd(2, { x: -286, y: 592 });
   assert.deepEqual(back, [true, true]);
-  view.touchStart(4, { x: 320, y: 0 }); view.touchMove(4, { x: 140, y: -2 });
-  view.touchEnd(4, { x: 140, y: -2 });
+  view.touchStart(4, { x: 340, y: 0 }); view.touchMove(4, { x: 160, y: -2 });
+  view.touchEnd(4, { x: 160, y: -2 });
   assert.deepEqual(back, [true, true, true]);
   view.playerCards = Array.from({ length: 8 }, (_, index) => ({ id: `p${index}`,
-    node: { position: { x: index % 2 ? 158 : -158, y: 238 - Math.floor(index / 2) * 220 },
+    node: { position: { x: index % 2 ? 158 : -158, y: 350 - Math.floor(index / 2) * 220 },
       setPosition(x, y) { this.position = { x, y }; } } }));
   view.touchStart(3, { x: 0, y: -100 }); view.touchMove(3, { x: 0, y: 50 });
   view.touchEnd(3, { x: 0, y: 50 });
   assert.ok(view.scrollOffset > 0); assert.equal(commands.length, 0);
+});
+test('仓库抽屉上拉跟手展开、下拉恢复，过程不提交球员命令', () => {
+  const { view, commands, back } = warehouseGestureFixture();
+  view.touchStart(1, { x: 0, y: 130 });
+  view.touchMove(1, { x: 0, y: 450 });
+  assert.ok(view.drawerProgress > 0.8); assert.ok(view.drawer.position.y > -120);
+  view.touchEnd(1, { x: 0, y: 450 });
+  assert.equal(view.snapped, true); assert.equal(view.drawerProgress, 1);
+  view.touchStart(2, { x: 0, y: 520 });
+  view.touchMove(2, { x: 0, y: 250 });
+  view.touchEnd(2, { x: 0, y: 250 });
+  assert.equal(view.snapped, false); assert.equal(view.drawerProgress, 0);
+  assert.equal(commands.length, 0); assert.equal(back.length, 0);
+});
+test('点击阵型后仓库停靠到下方约四分之一，仍可上拉全屏并下拉恢复聚焦布局', () => {
+  const { view, commands } = warehouseGestureFixture();
+  view.touchStart(1, { x: 0, y: 472 }); view.touchEnd(1, { x: 0, y: 472 });
+  assert.equal(view.drawerTop(), -300);
+  view.touchStart(2, { x: 0, y: -340 }); view.touchMove(2, { x: 0, y: 500 });
+  view.touchEnd(2, { x: 0, y: 500 });
+  assert.equal(view.drawerProgress, 1); assert.equal(view.drawerTop(), 548);
+  view.touchStart(3, { x: 0, y: 520 }); view.touchMove(3, { x: 0, y: -250 });
+  view.touchEnd(3, { x: 0, y: -250 });
+  assert.equal(view.drawerProgress, 0); assert.equal(view.drawerTop(), -300);
+  assert.deepEqual(JSON.parse(JSON.stringify(commands)), [{ type: 'SelectFormation', formationId: '2-2-1' }]);
+});
+test('球员信息页的顶部关闭键和底部返回按钮都只产生关闭意图', () => {
+  const { view, commands, back } = warehouseGestureFixture(); let closed = 0;
+  view.closeInfo = () => { closed++; view.infoPanel = undefined; };
+  view.infoPanel = {};
+  view.touchStart(1, { x: 296, y: 535 }); view.touchEnd(1, { x: 296, y: 535 });
+  assert.equal(closed, 1);
+  view.infoPanel = {};
+  view.touchStart(2, { x: 0, y: -500 }); view.touchEnd(2, { x: 0, y: -500 });
+  assert.equal(closed, 2);
+  view.infoPanel = {};
+  view.touchStart(3, { x: 0, y: 0 }); view.touchEnd(3, { x: 0, y: 0 });
+  assert.equal(closed, 2);
+  assert.equal(commands.length, 0); assert.equal(back.length, 0);
+});
+test('球员信息页综合分只读派生自现有五项评分', () => {
+  const view = Object.create(PlayerWarehouseView.prototype);
+  assert.equal(view.overall({ weight: 55, power: 84, precision: 96, mentality: 96, curve: 98 }), 86);
+  assert.equal(view.overall({ weight: 95, power: 77, precision: 78, mentality: 95, curve: 72 }), 83);
 });
 function setup() {
   const boot = new Boot(); boot.config = config; boot.gesture = new LaunchGesture(config);
@@ -224,11 +290,13 @@ function viewFixture() {
   screen.resultPanel = { active: false }; screen.resultTitle = {}; screen.resultScore = {};
   const circles = [];
   screen.powerCircle = { clear() { circles.length = 0; }, circle(x, y, radius) { circles.push({ x, y, radius }); }, fill() {} };
-  const lines = [];
-  screen.aim = { clear() { lines.length = 0; }, moveTo(x, y) { lines.push([x, y]); },
-    lineTo(x, y) { lines.push([x, y]); }, stroke() {} };
+  const lines = []; const aimStrokes = []; let currentPath = [];
+  screen.aim = { clear() { lines.length = 0; aimStrokes.length = 0; currentPath = []; },
+    moveTo(x, y) { lines.push([x, y]); currentPath.push([x, y]); },
+    lineTo(x, y) { lines.push([x, y]); currentPath.push([x, y]); },
+    stroke() { aimStrokes.push({ points: currentPath, color: this.strokeColor, lineWidth: this.lineWidth }); currentPath = []; } };
   const state = createPrototypeState('view', config, 'normal');
-  return { screen, state, lines, circles, ballPaths, ballFills };
+  return { screen, state, lines, aimStrokes, circles, ballPaths, ballFills };
 }
 test('黑白足球图案随物理角度旋转，中心黑块与外围黑块保留', () => {
   const { screen, state, ballPaths, ballFills } = viewFixture();
@@ -272,7 +340,7 @@ test('碰撞冲量只供表现层消费，读取后清零', () => {
   physics.recordImpact({ getImpulse: () => null });
   assert.equal(physics.consumeStrongestImpact(), 0);
 });
-test('反馈跟踪器对进球、瞄准超时和终局各只发出一次事件', () => {
+test('反馈跟踪器对进球、开球违例、瞄准超时和终局各只发出一次事件', () => {
   const initial = createStandardMatchState('feedback', config, 7, catalog);
   const tracker = new MatchFeedbackTracker(); tracker.reset(initial);
   const other = initial.activeOperatorId === 'blue' ? 'red' : 'blue';
@@ -288,7 +356,13 @@ test('反馈跟踪器对进球、瞄准超时和终局各只发出一次事件',
   assert.deepEqual(JSON.parse(JSON.stringify(events)), [{ type: 'turn-timeout',
     expiredSide: other, activeSide: initial.activeOperatorId }]);
   assert.equal(tracker.observe(timeout, 'turn-timeout').length, 0);
-  const finished = { ...timeout, revision: timeout.revision + 1, phase: 'Finished',
+  const violation = { ...timeout, revision: timeout.revision + 1, turnNumber: 4,
+    activeOperatorId: other };
+  events = tracker.observe(violation, 'kickoff-violation');
+  assert.deepEqual(JSON.parse(JSON.stringify(events)), [{ type: 'kickoff-violation',
+    violatingSide: initial.activeOperatorId, activeSide: other }]);
+  assert.equal(tracker.observe(violation, 'kickoff-violation').length, 0);
+  const finished = { ...violation, revision: violation.revision + 1, phase: 'Finished',
     result: { winnerId: initial.activeOperatorId, reason: 'TimeExpired' } };
   events = tracker.observe(finished, 'finished');
   assert.deepEqual(JSON.parse(JSON.stringify(events)), [{ type: 'finished', winner: initial.activeOperatorId,
@@ -303,6 +377,9 @@ test('时钟和覆盖反馈文案来自状态变化结果', () => {
     score: { blue: 2, red: 3 } }))), { type: 'goal', title: '红方进球！', detail: '蓝 2  :  3 红' });
   assert.deepEqual(JSON.parse(JSON.stringify(overlayFor({ type: 'turn-timeout', expiredSide: 'blue',
     activeSide: 'red' }))), { type: 'turn-timeout', title: '蓝方瞄准超时', detail: '轮到红方行动' });
+  assert.deepEqual(JSON.parse(JSON.stringify(overlayFor({ type: 'kickoff-violation', violatingSide: 'blue',
+    activeSide: 'red' }))), { type: 'kickoff-violation', title: '开球违例',
+    detail: '蓝方开球直接入门 · 换红方开球' });
 });
 test('最后五秒高亮，事件覆盖层和终局面板按状态互斥显示', () => {
   const { screen, state } = viewFixture();
@@ -321,17 +398,23 @@ test('最后五秒高亮，事件覆盖层和终局面板按状态互斥显示',
   assert.equal(screen.resultTitle.string, '蓝方获胜');
   assert.match(screen.resultScore.string, /蓝 2 : 1 红/);
 });
-test('白色虚线有间隔，精度总长不随力度变化，方向正确', () => {
-  const { screen, state, lines } = viewFixture();
+test('立体瞄准线由投影、主体和高光组成，无箭头且总长方向正确', () => {
+  const { screen, state, aimStrokes } = viewFixture();
   for (const power of [0.01, 0.5, 1]) for (const direction of [{ x: 0, y: 1 }, { x: -1, y: 0 }]) {
     screen.render(state, { playerId: 'a1', aim: { direction, power } }, '', '');
-    const start = lines[0], end = lines.at(-2); // 最后三个点是箭头，第二个为精度线端点。
+    assert.equal(aimStrokes.length, 3);
+    assert.deepEqual(aimStrokes.map(stroke => stroke.lineWidth), [8, 5, 2]);
+    assert.ok(aimStrokes.every(stroke => stroke.points.length % 2 === 0));
+    const [shadow, body, highlight] = aimStrokes;
+    assert.equal(shadow.color.r, 9); assert.equal(body.color.g, 231); assert.equal(highlight.color.r, 255);
+    const start = body.points[0], end = body.points.at(-1);
     assert.equal(Math.hypot(end[0] - start[0], end[1] - start[1]), config.aimLength * 80);
     assert.equal(end[0] - start[0], direction.x * config.aimLength * 80);
     assert.equal(end[1] - start[1], direction.y * config.aimLength * 80);
-    assert.equal(screen.aim.strokeColor, Color.WHITE);
-    assert.ok(Math.abs(Math.hypot(lines[1][0]-start[0], lines[1][1]-start[1]) - config.aimDashLength*80) < 1e-8);
-    assert.ok(Math.abs(Math.hypot(lines[2][0]-lines[1][0], lines[2][1]-lines[1][1]) - config.aimDashGap*80) < 1e-8);
+    assert.ok(Math.abs(Math.hypot(body.points[1][0]-start[0], body.points[1][1]-start[1])
+      - config.aimDashLength*80) < 1e-8);
+    assert.ok(Math.abs(Math.hypot(body.points[2][0]-body.points[1][0],
+      body.points[2][1]-body.points[1][1]) - config.aimDashGap*80) < 1e-8);
   }
 });
 test('浅橘黄力度圆同心、透明，随力度增大并封顶，取消后清除', () => {
@@ -351,6 +434,33 @@ test('浅橘黄力度圆同心、透明，随力度增大并封顶，取消后�
   screen.render(state, { playerId: 'a1', aim: null }, '', '');
   assert.equal(circles[0].radius, config.playerRadius*80); assert.equal(lines.length, 0);
   screen.render(state, null, '', ''); assert.equal(circles.length, 0); assert.equal(lines.length, 0);
+});
+test('球员精度决定瞄准线长度，力量决定同一拖动力度下的力度盘上限', () => {
+  const { screen, aimStrokes, circles } = viewFixture();
+  screen.catalog = catalog;
+  const state = createStandardMatchState('attribute-visuals', config, 9, catalog);
+  const lowPower = state.players.find(player => player.templateId === 'van-dijk');
+  const highPower = state.players.find(player => player.templateId === 'cristiano-ronaldo');
+  const highPrecision = state.players.find(player => player.templateId === 'messi');
+  const lowPrecision = state.players.find(player => player.templateId === 'mbappe');
+  const radius = player => {
+    screen.render(state, { playerId: player.instanceId,
+      aim: { direction: { x: 0, y: 1 }, power: 0.75 } }, '', '');
+    return circles[0].radius;
+  };
+  assert.ok(radius(highPower) > radius(lowPower));
+  assert.ok(Math.abs(radius(highPower) / 80
+    - (config.playerRadius + (playerGameplayValues(getPlayerTemplate(catalog, highPower.templateId), config)
+      .powerCircleMaxRadius - config.playerRadius) * 0.75)) < 1e-12);
+  const length = player => {
+    screen.render(state, { playerId: player.instanceId,
+      aim: { direction: { x: 1, y: 0 }, power: 0.5 } }, '', '');
+    const points = aimStrokes[1].points;
+    return Math.hypot(points.at(-1)[0] - points[0][0], points.at(-1)[1] - points[0][1]);
+  };
+  assert.ok(length(highPrecision) > length(lowPrecision));
+  assert.ok(Math.abs(length(highPrecision) / 80
+    - playerGameplayValues(getPlayerTemplate(catalog, highPrecision.templateId), config).aimLength) < 1e-12);
 });
 test('视图随场景销毁后不再重复 destroy', () => {
   const screen = Object.create(PrototypeView.prototype); let calls = 0;

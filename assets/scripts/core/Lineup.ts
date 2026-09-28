@@ -13,14 +13,67 @@ export interface MatchLineups {
     readonly red: readonly LineupSelection[];
 }
 
-/** 当前阶段沿用 stage2 对称坐标；阵型尚未成为比赛规则。 */
+export type FormationId = '2-1-2' | '2-2-1' | '1-2-2';
+export interface FormationDefinition {
+    readonly id: FormationId;
+    readonly label: string;
+    /** 蓝方半场坐标，顺序与五个阵容槽位一致；红方使用中心旋转后的坐标。 */
+    readonly positions: readonly Vector2Data[];
+}
+
+export const defaultFormationId: FormationId = '2-1-2';
+
+/** 数字从己方球门到进攻方向依次表示后排、中排、前排人数。 */
+export const formationDefinitions: readonly FormationDefinition[] = Object.freeze([
+    Object.freeze({ id: '2-1-2', label: '均衡 2-1-2', positions: Object.freeze([
+        Object.freeze({ x: -1.6, y: -3.8 }), Object.freeze({ x: 1.6, y: -3.8 }),
+        Object.freeze({ x: 0, y: -3 }),
+        Object.freeze({ x: -1.25, y: -2 }), Object.freeze({ x: 1.25, y: -2 }),
+    ]) }),
+    Object.freeze({ id: '2-2-1', label: '稳守 2-2-1', positions: Object.freeze([
+        Object.freeze({ x: -1.6, y: -3.85 }), Object.freeze({ x: 1.6, y: -3.85 }),
+        Object.freeze({ x: -1.3, y: -2.9 }), Object.freeze({ x: 1.3, y: -2.9 }),
+        Object.freeze({ x: 0, y: -1.85 }),
+    ]) }),
+    Object.freeze({ id: '1-2-2', label: '进攻 1-2-2', positions: Object.freeze([
+        Object.freeze({ x: 0, y: -3.95 }),
+        Object.freeze({ x: -1.45, y: -3 }), Object.freeze({ x: 1.45, y: -3 }),
+        Object.freeze({ x: -1.3, y: -1.95 }), Object.freeze({ x: 1.3, y: -1.95 }),
+    ]) }),
+]);
+
+export function isFormationId(value: unknown): value is FormationId {
+    return typeof value === 'string' && formationDefinitions.some(formation => formation.id === value);
+}
+
+export function getFormation(id: FormationId): FormationDefinition {
+    return formationDefinitions.find(formation => formation.id === id)!;
+}
+
+export function formationPositions(id: FormationId, side: 'blue' | 'red'): readonly Vector2Data[] {
+    return getFormation(id).positions.map(point => side === 'blue'
+        ? { x: point.x, y: point.y }
+        : { x: point.x === 0 ? 0 : -point.x, y: -point.y });
+}
+
+export function inferFormationId(team: readonly LineupSelection[], side: 'blue' | 'red'): FormationId {
+    const match = formationDefinitions.find(formation => {
+        const positions = formationPositions(formation.id, side);
+        return team.length === positions.length && team.every((item, index) =>
+            Math.abs(item.position.x - positions[index].x) < 1e-6
+            && Math.abs(item.position.y - positions[index].y) < 1e-6);
+    });
+    return match?.id ?? defaultFormationId;
+}
+
+/** 默认使用参考图的 2-1-2；实际坐标由双方赛前选择的阵型决定。 */
 export function defaultLineups(): MatchLineups {
     const ids = ['van-dijk', 'cristiano-ronaldo', 'de-bruyne', 'messi', 'mbappe'];
-    const half = [[-1.6, -3.8], [1.6, -3.8], [0, -3], [-1.25, -2], [1.25, -2]];
+    const blue = formationPositions(defaultFormationId, 'blue');
+    const red = formationPositions(defaultFormationId, 'red');
     return {
-        blue: ids.map((templateId, i) => ({ templateId, position: { x: half[i][0], y: half[i][1] } })),
-        red: ids.map((templateId, i) => ({ templateId,
-            position: { x: half[i][0] === 0 ? 0 : -half[i][0], y: -half[i][1] } })),
+        blue: ids.map((templateId, index) => ({ templateId, position: blue[index] })),
+        red: ids.map((templateId, index) => ({ templateId, position: red[index] })),
     };
 }
 

@@ -8,7 +8,8 @@ import { isPlayablePosition } from '../core/BoundaryGeometry';
 function copy<T>(value: T): T { return JSON.parse(JSON.stringify(value)) as T; }
 export type CommandResult = { readonly ok: true; readonly revision: number }
     | { readonly ok: false; readonly reason: Rejection };
-type EndReason = 'ready' | 'moving' | 'stopped' | 'timeout' | 'invalid' | 'goal' | 'turn-timeout' | 'finished';
+type EndReason = 'ready' | 'moving' | 'stopped' | 'timeout' | 'invalid' | 'goal'
+    | 'kickoff-violation' | 'turn-timeout' | 'finished';
 
 /** 本地权威入口。初始状态由可信应用配置创建，不能直接传入网络载荷。 */
 export class LocalMatch {
@@ -129,6 +130,8 @@ export class LocalMatch {
     }
 
     private finishSimulation(reason: 'stopped' | 'timeout' | 'invalid' | 'goal', scorer?: string): void {
+        const kickoffViolation = Boolean(scorer && this.state.kickoff.pending);
+        const launchingOperatorId = this.state.activeOperatorId;
         // 从运动中快照恢复时没有本进程的发射前缓存，退回最近的权威快照而不是抛错。
         const bodySource = reason === 'invalid' && this.beforeLaunch ? this.beforeLaunch : this.state;
         const zero = { x: 0, y: 0 };
@@ -137,27 +140,31 @@ export class LocalMatch {
             ball: { ...bodySource.ball, velocity: { ...zero } } };
         this.physics!.stop(); this.physics!.restore(this.state);
         this.recordSnapshot();
-        if (scorer) {
+        if (scorer && !kickoffViolation) {
             this.state = { ...this.state, revision: this.state.revision + 1,
                 score: { ...this.state.score, [scorer]: (this.state.score[scorer] ?? 0) + 1 } };
         }
-        this.endReason = reason;
+        this.endReason = kickoffViolation ? 'kickoff-violation' : reason;
         this.accumulator = 0;
-        if (this.state.clock.remainingMs <= 1e-9) {
+        if (kickoffViolation) {
+            this.resetForKickoff(this.otherOperator(launchingOperatorId));
+            if (this.state.clock.remainingMs <= 1e-9) this.finishMatch();
+        } else if (this.state.clock.remainingMs <= 1e-9) {
             this.finishMatch();
         } else if (scorer) {
-            this.resetAfterGoal(this.otherOperator(scorer));
+            this.resetForKickoff(this.otherOperator(scorer));
         } else {
             if (reason === 'goal') throw new Error('进球结算缺少得分方');
             this.changeTurn(reason);
         }
     }
 
-    private resetAfterGoal(concedingOperatorId: string): void {
+    private resetForKickoff(nextOperatorId: string): void {
         const zero = { x: 0, y: 0 };
         this.state = { ...this.state, revision: this.state.revision + 1, phase: 'Aiming',
-            turnNumber: this.state.turnNumber + 1, activeOperatorId: concedingOperatorId,
+            turnNumber: this.state.turnNumber + 1, activeOperatorId: nextOperatorId,
             clock: { ...this.state.clock, turnRemainingMs: this.state.clock.turnDurationMs },
+            kickoff: { ...this.state.kickoff, pending: true },
             players: this.state.players.map(player => {
                 const kickoff = this.state.kickoff.players.find(p => p.instanceId === player.instanceId);
                 if (!kickoff) throw new Error(`缺少开局位置：${player.instanceId}`);
@@ -169,10 +176,13 @@ export class LocalMatch {
     }
 
     private changeTurn(reason: Exclude<EndReason, 'ready' | 'moving' | 'goal' | 'finished'>): void {
+        const completesKickoff = reason === 'stopped' || reason === 'timeout';
         this.state = { ...this.state, revision: this.state.revision + 1, phase: 'Aiming',
             turnNumber: this.state.turnNumber + 1,
             activeOperatorId: this.otherOperator(this.state.activeOperatorId),
-            clock: { ...this.state.clock, turnRemainingMs: this.state.clock.turnDurationMs } };
+            clock: { ...this.state.clock, turnRemainingMs: this.state.clock.turnDurationMs },
+            kickoff: completesKickoff && this.state.kickoff.pending
+                ? { ...this.state.kickoff, pending: false } : this.state.kickoff };
         this.endReason = reason;
         this.recordSnapshot();
     }

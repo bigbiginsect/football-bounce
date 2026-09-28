@@ -27,9 +27,10 @@ class FakePhysics {
   stop() { this.stops++; }
 }
 
-function setup(patch = {}, seed = 123) {
+function setup(patch = {}, seed = 123, kickoffPending = true) {
   const currentConfig = freezeConfig({ ...config, ...patch });
-  const state = createStandardMatchState('standard-test', currentConfig, seed, catalog);
+  const created = createStandardMatchState('standard-test', currentConfig, seed, catalog);
+  const state = { ...created, kickoff: { ...created.kickoff, pending: kickoffPending } };
   const physics = new FakePhysics(currentConfig);
   const match = new LocalMatch(state, physics, currentConfig);
   let commandSequence = 0;
@@ -50,7 +51,7 @@ function fixedSteps(match, count, step = config.fixedStep) {
 
 test('标准模式创建 5v5，模式局时和瞄准时限来自配置，开局位置无重叠', () => {
   const state = createStandardMatchState('m', config, 42, catalog);
-  assert.equal(state.schemaVersion, 3);
+  assert.equal(state.schemaVersion, 4);
   assert.equal(state.catalogVersion, catalog.version);
   assert.equal(state.modeId, 'standard');
   assert.equal(state.players.filter(player => player.ownerId === 'blue').length, 5);
@@ -89,6 +90,7 @@ test('普通运动完全停止后交换行动方并重置 20 秒瞄准时间', (
   assert.equal(after.turnNumber, 2);
   assert.equal(after.clock.turnRemainingMs, 20000);
   assert.ok(after.clock.remainingMs < before.clock.remainingMs);
+  assert.equal(after.kickoff.pending, false);
 });
 
 test('上一回合已接受的命令 ID 在历史窗口内仍按重复命令拒绝', () => {
@@ -107,6 +109,7 @@ test('瞄准 20 秒超时自动换手，大步推进可跨多个回合且比赛�
   assert.equal(state.turnNumber, 2);
   assert.equal(state.clock.turnRemainingMs, 20000);
   assert.equal(match.getSimulationStatus().reason, 'turn-timeout');
+  assert.equal(state.kickoff.pending, true);
   match.advance(45);
   state = match.getSnapshot();
   assert.equal(state.turnNumber, 4);
@@ -194,8 +197,70 @@ test('门柱角内的真实墙体侵入及明显越界仍拒绝', () => {
   assert.equal(isPlayablePosition({ x: 0, y: halfLine + config.goalDepth }, config.playerRadius, config), false);
 });
 
-test('进球只加一分，全部恢复开局位置并由失球方行动', () => {
+test('开球直接入门判违例，不计分、全体复位并连续换边开球', () => {
   const { match, physics, launch, config: currentConfig } = setup();
+  const initial = match.getSnapshot();
+  const directGoal = () => {
+    const active = match.getSnapshot().activeOperatorId;
+    physics.onStep = frame => { frame.ball.position = { x: 0,
+      y: active === 'blue' ? currentConfig.fieldHeight / 2 + currentConfig.ballRadius
+        : -currentConfig.fieldHeight / 2 - currentConfig.ballRadius }; };
+    assert.equal(launch().ok, true); fixedSteps(match, 1);
+  };
+  directGoal();
+  let after = match.getSnapshot();
+  assert.deepEqual(after.score, initial.score);
+  assert.notEqual(after.activeOperatorId, initial.activeOperatorId);
+  assert.equal(after.kickoff.pending, true);
+  assert.equal(after.phase, 'Aiming');
+  assert.equal(match.getSimulationStatus().reason, 'kickoff-violation');
+  assert.deepEqual(after.ball.position, after.kickoff.ballPosition);
+  for (const player of after.players) {
+    assert.deepEqual(player.position, after.kickoff.players.find(item => item.instanceId === player.instanceId).position);
+  }
+  const secondKickoffSide = after.activeOperatorId;
+  directGoal();
+  after = match.getSnapshot();
+  assert.deepEqual(after.score, initial.score);
+  assert.notEqual(after.activeOperatorId, secondKickoffSide);
+  assert.equal(after.kickoff.pending, true);
+});
+
+test('开球未进球并停止后解除限制，下一回合进球正常计分并重新等待开球', () => {
+  const { match, physics, launch, config: currentConfig } = setup();
+  launch(); fixedSteps(match, 18);
+  const openPlay = match.getSnapshot();
+  assert.equal(openPlay.kickoff.pending, false);
+  const scorer = openPlay.activeOperatorId;
+  physics.onStep = frame => { frame.ball.position = { x: 0,
+    y: scorer === 'blue' ? currentConfig.fieldHeight / 2 + currentConfig.ballRadius
+      : -currentConfig.fieldHeight / 2 - currentConfig.ballRadius }; };
+  launch(); fixedSteps(match, 1);
+  const after = match.getSnapshot();
+  assert.equal(after.score[scorer], 1);
+  assert.equal(after.activeOperatorId, scorer === 'blue' ? 'red' : 'blue');
+  assert.equal(after.kickoff.pending, true);
+  assert.equal(match.getSimulationStatus().reason, 'goal');
+});
+
+test('开球违例发生在比赛到时当步时不计分，复位后结束比赛', () => {
+  const { match, physics, launch, config: currentConfig } = setup({ matchSeconds: 10 });
+  match.advance(9.99);
+  const active = match.getSnapshot().activeOperatorId;
+  physics.onStep = frame => { frame.ball.position = { x: 0,
+    y: active === 'blue' ? currentConfig.fieldHeight / 2 + currentConfig.ballRadius
+      : -currentConfig.fieldHeight / 2 - currentConfig.ballRadius }; };
+  launch(); match.advance(0.02);
+  const after = match.getSnapshot();
+  assert.deepEqual(after.score, { blue: 0, red: 0 });
+  assert.equal(after.phase, 'Finished');
+  assert.equal(after.result.winnerId, null);
+  assert.equal(after.kickoff.pending, true);
+  assert.deepEqual(after.ball.position, after.kickoff.ballPosition);
+});
+
+test('进球只加一分，全部恢复开局位置并由失球方行动', () => {
+  const { match, physics, launch, config: currentConfig } = setup({}, 123, false);
   const before = match.getSnapshot();
   const scorer = before.activeOperatorId;
   const targetY = scorer === 'blue' ? currentConfig.fieldHeight / 2 + currentConfig.ballRadius
@@ -208,6 +273,7 @@ test('进球只加一分，全部恢复开局位置并由失球方行动', () =>
   assert.equal(after.score[conceding], 0);
   assert.equal(after.activeOperatorId, conceding);
   assert.equal(after.phase, 'Aiming');
+  assert.equal(after.kickoff.pending, true);
   assert.deepEqual(after.ball.position, after.kickoff.ballPosition);
   for (const player of after.players) {
     assert.deepEqual(player.position, after.kickoff.players.find(item => item.instanceId === player.instanceId).position);
@@ -234,7 +300,7 @@ test('运动中比赛到时继续等待停止，再按最终比分结束', () =>
 });
 
 test('运动到时当步的有效进球先计分再结束比赛', () => {
-  const { match, physics, launch, config: currentConfig } = setup({ matchSeconds: 10 }, 5);
+  const { match, physics, launch, config: currentConfig } = setup({ matchSeconds: 10 }, 5, false);
   match.advance(9.99);
   const scorer = match.getSnapshot().activeOperatorId;
   physics.onStep = frame => { frame.ball.position = { x: 0,

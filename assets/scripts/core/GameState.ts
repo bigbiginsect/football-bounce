@@ -13,9 +13,11 @@ export type MatchPhase = 'Aiming' | 'Simulating' | 'Resolving' | 'Finished';
 export interface KickoffState {
     readonly players: readonly { readonly instanceId: string; readonly position: Vector2Data }[];
     readonly ballPosition: Vector2Data;
+    /** true 表示下一次有效发射仍受“开球不能直接进球”限制。 */
+    readonly pending: boolean;
 }
 export interface GameState {
-    readonly schemaVersion: 3;
+    readonly schemaVersion: 4;
     readonly revision: number;
     readonly matchId: string;
     readonly modeId: string;

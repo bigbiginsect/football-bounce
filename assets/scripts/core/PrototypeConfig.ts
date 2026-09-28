@@ -5,7 +5,7 @@ import { defaultLineups, validateLineups } from './Lineup';
 
 /** 阶段 1 物理基线与阶段 2 标准模式参数。修改后停止并重新运行预览，同时更新 version。 */
 export const prototypeConfig = {
-    version: 'stage3-001',
+    version: 'stage3-002',
     fieldWidth: 6.8, fieldHeight: 10.5, wallThickness: 0.25,
     goalWidth: 2.4, goalDepth: 0.6,
     playerRadius: 0.28, ballRadius: 0.15,
@@ -88,8 +88,8 @@ export function createPrototypeState(matchId: string, config: PrototypeConfig, f
         ballPosition: fixture === 'wall' || fixture === 'corner'
             ? { x: config.fieldWidth / 2 - config.ballRadius,
                 y: fixture === 'corner' ? config.fieldHeight / 2 - config.ballRadius : 0 }
-            : { x: 0, y: -0.25 } };
-    return { schemaVersion: 3, revision: 0, matchId, modeId: 'practice', configVersion: config.version,
+            : { x: 0, y: -0.25 }, pending: false };
+    return { schemaVersion: 4, revision: 0, matchId, modeId: 'practice', configVersion: config.version,
         catalogVersion: 'practice-fixture',
         turnNumber: 1, phase: 'Aiming', activeOperatorId: 'a',
         clock: { matchDurationMs: config.matchSeconds * 1000, elapsedMs: 0,
@@ -128,10 +128,10 @@ export function createStandardMatchState(matchId: string, config: PrototypeConfi
         ...body(selection.position.x, selection.position.y), instanceId: `red-${index + 1}`,
         templateId: selection.templateId, ownerId: 'red' }))];
     const kickoff = { players: players.map(p => ({ instanceId: p.instanceId, position: { ...p.position } })),
-        ballPosition: { x: 0, y: 0 } };
+        ballPosition: { x: 0, y: 0 }, pending: true };
     const matchDurationMs = config.matchSeconds * 1000;
     const turnDurationMs = config.aimingSeconds * 1000;
-    return { schemaVersion: 3, revision: 0, matchId, modeId: 'standard', configVersion: config.version,
+    return { schemaVersion: 4, revision: 0, matchId, modeId: 'standard', configVersion: config.version,
         catalogVersion: catalog.version,
         turnNumber: 1, phase: 'Aiming', activeOperatorId: firstOperatorId,
         clock: { matchDurationMs, elapsedMs: 0, remainingMs: matchDurationMs,

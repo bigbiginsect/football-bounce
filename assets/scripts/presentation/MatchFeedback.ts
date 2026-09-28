@@ -3,12 +3,13 @@ import type { GameState } from '../core/GameState';
 export type MatchSide = 'blue' | 'red';
 export type MatchFeedbackEvent =
     | { readonly type: 'goal'; readonly scorer: MatchSide; readonly score: Readonly<Record<MatchSide, number>> }
+    | { readonly type: 'kickoff-violation'; readonly violatingSide: MatchSide; readonly activeSide: MatchSide }
     | { readonly type: 'turn-timeout'; readonly expiredSide: MatchSide; readonly activeSide: MatchSide }
     | { readonly type: 'finished'; readonly winner: MatchSide | null;
         readonly score: Readonly<Record<MatchSide, number>> };
 
 export interface MatchOverlay {
-    readonly type: 'goal' | 'turn-timeout';
+    readonly type: 'goal' | 'kickoff-violation' | 'turn-timeout';
     readonly title: string;
     readonly detail: string;
 }
@@ -50,6 +51,11 @@ export function overlayFor(event: MatchFeedbackEvent): MatchOverlay | null {
         title: `${sideLabel(event.scorer)}进球！`,
         detail: `蓝 ${event.score.blue}  :  ${event.score.red} 红`,
     };
+    if (event.type === 'kickoff-violation') return {
+        type: 'kickoff-violation',
+        title: '开球违例',
+        detail: `${sideLabel(event.violatingSide)}开球直接入门 · 换${sideLabel(event.activeSide)}开球`,
+    };
     if (event.type === 'turn-timeout') return {
         type: 'turn-timeout',
         title: `${sideLabel(event.expiredSide)}瞄准超时`,
@@ -79,6 +85,10 @@ export class MatchFeedbackTracker {
         }
         if (reason === 'turn-timeout' && current.turnNumber !== previous.turnNumber) {
             events.push({ type: 'turn-timeout', expiredSide: previous.activeSide,
+                activeSide: current.activeSide });
+        }
+        if (reason === 'kickoff-violation' && current.turnNumber !== previous.turnNumber) {
+            events.push({ type: 'kickoff-violation', violatingSide: previous.activeSide,
                 activeSide: current.activeSide });
         }
         if (current.phase === 'Finished' && previous.phase !== 'Finished') {
