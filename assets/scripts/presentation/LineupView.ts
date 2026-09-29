@@ -244,7 +244,6 @@ export class LineupView {
     private playerCard(parent: Node, id: string, width: number, height: number, field: boolean): Node {
         const template = getPlayerTemplate(this.catalog, id);
         const frame = this.portraits.get(id);
-        if (!frame) throw new Error(`缺少头像资源：${id}`);
         const card = this.node(parent, `Card-${id}`, width, height);
         const g = card.addComponent(Graphics);
         g.fillColor = field ? new Color(11, 42, 54, 235) : new Color(31, 67, 82);
@@ -253,9 +252,17 @@ export class LineupView {
         g.lineWidth = 2; g.stroke();
         const size = field ? 74 : 76;
         const avatar = this.node(card, 'Avatar', size, size); avatar.setPosition(0, field ? 15 : 30);
-        const mask = avatar.addComponent(Mask); mask.type = Mask.Type.GRAPHICS_ELLIPSE; mask.segments = 32;
-        const imageNode = this.node(avatar, 'Image', size, size);
-        const sprite = imageNode.addComponent(Sprite); sprite.sizeMode = Sprite.SizeMode.CUSTOM; sprite.spriteFrame = frame;
+        if (frame) {
+            const mask = avatar.addComponent(Mask); mask.type = Mask.Type.GRAPHICS_ELLIPSE; mask.segments = 32;
+            const imageNode = this.node(avatar, 'Image', size, size);
+            const sprite = imageNode.addComponent(Sprite); sprite.sizeMode = Sprite.SizeMode.CUSTOM; sprite.spriteFrame = frame;
+        } else {
+            const placeholder = avatar.addComponent(Graphics);
+            placeholder.fillColor = new Color(24, 91, 104); placeholder.circle(0, 0, size / 2); placeholder.fill();
+            placeholder.strokeColor = new Color(153, 225, 218); placeholder.lineWidth = 3;
+            placeholder.circle(0, 0, size / 2 - 2); placeholder.stroke();
+            this.label(avatar, template.name, 0, 0, template.name.length > 4 ? 13 : 16, size - 8);
+        }
         this.label(card, template.name, 0, field ? -38 : -19, field ? 19 : 22, width - 8);
         if (!field) this.label(card, `重${template.weight}  力${template.power}  准${template.precision}`,
             0, -53, 18, width - 4);

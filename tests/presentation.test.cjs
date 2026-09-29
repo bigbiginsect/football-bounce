@@ -279,8 +279,9 @@ test('触点转换使用渲染相机，适应视口偏移和不同缩放', () =>
 });
 function viewFixture() {
   const screen = Object.create(PrototypeView.prototype); screen.config = config;
-  const ballPaths = []; const ballFills = [];
-  screen.bodies = { clear() { ballPaths.length = 0; ballFills.length = 0; }, circle() {},
+  const ballPaths = []; const ballFills = []; const bodyCircles = [];
+  screen.bodies = { clear() { ballPaths.length = 0; ballFills.length = 0; bodyCircles.length = 0; },
+    circle(x, y, radius) { bodyCircles.push({ x, y, radius }); },
     moveTo(x, y) { ballPaths.push([x, y]); }, lineTo(x, y) { ballPaths.push([x, y]); },
     fill() { ballFills.push(this.fillColor); }, stroke() {} };
   screen.status = {}; screen.info = {};
@@ -296,17 +297,31 @@ function viewFixture() {
     lineTo(x, y) { lines.push([x, y]); currentPath.push([x, y]); },
     stroke() { aimStrokes.push({ points: currentPath, color: this.strokeColor, lineWidth: this.lineWidth }); currentPath = []; } };
   const state = createPrototypeState('view', config, 'normal');
-  return { screen, state, lines, aimStrokes, circles, ballPaths, ballFills };
+  return { screen, state, lines, aimStrokes, circles, ballPaths, ballFills, bodyCircles };
 }
-test('黑白足球图案随物理角度旋转，中心黑块与外围黑块保留', () => {
+test('立体足球图案随物理角度旋转，中心黑块、外围黑块与非对称标记保留', () => {
   const { screen, state, ballPaths, ballFills } = viewFixture();
   screen.render(state, null, '', '', 0);
   const first = ballPaths[0];
   assert.equal(ballFills.filter(color => color.r === 25).length, 6);
+  assert.ok(ballFills.some(color => color.r === 203));
+  assert.ok(ballFills.some(color => color.r === 248));
+  assert.ok(ballFills.some(color => color.r === 255 && color.g === 183));
   screen.render(state, null, '', '', 90);
   const rotated = ballPaths[0];
   assert.ok(Math.hypot(first[0] - rotated[0], first[1] - rotated[1]) > 3);
   assert.equal(ballFills.filter(color => color.r === 25).length, 6);
+});
+test('皮球落地阴影拖在平动方向后方，平动与自转视觉来源独立', () => {
+  const { screen, state, bodyCircles } = viewFixture();
+  const ballCircleIndex = state.players.length;
+  screen.render(state, null, '', '', 0);
+  const restShadow = { ...bodyCircles[ballCircleIndex] };
+  const moving = { ...state, ball: { ...state.ball, velocity: { x: 6, y: 0 } } };
+  screen.render(moving, null, '', '', 0);
+  const movingShadow = bodyCircles[ballCircleIndex];
+  assert.ok(movingShadow.x < restShadow.x);
+  assert.equal(movingShadow.y, restShadow.y);
 });
 test('球面黑块打破 72 度重复，高速旋转不会把正转 60 度误认成反转 12 度', () => {
   const { screen, state, ballPaths } = viewFixture();
@@ -333,12 +348,23 @@ test('物理适配层限制线速度时不改写皮球自旋', () => {
 });
 test('碰撞冲量只供表现层消费，读取后清零', () => {
   const physics = Object.create(CocosPhysics.prototype); physics.strongestImpact = 0;
-  physics.recordImpact({ getImpulse: () => ({ normalImpulses: [0.12, -0.38], tangentImpulses: [] }) });
-  physics.recordImpact({ getImpulse: () => ({ normalImpulses: [0.2], tangentImpulses: [] }) });
+  physics.recordImpact(null, null, { getImpulse: () => ({ normalImpulses: [0.12, -0.38], tangentImpulses: [] }) });
+  physics.recordImpact(null, null, { getImpulse: () => ({ normalImpulses: [0.2], tangentImpulses: [] }) });
   assert.equal(physics.consumeStrongestImpact(), 0.38);
   assert.equal(physics.consumeStrongestImpact(), 0);
-  physics.recordImpact({ getImpulse: () => null });
+  physics.recordImpact(null, null, { getImpulse: () => null });
   assert.equal(physics.consumeStrongestImpact(), 0);
+});
+test('物理接触回调只采集皮球碰到的球员并在同一步去重', () => {
+  const physics = Object.create(CocosPhysics.prototype);
+  physics.bodies = new Map([['a1', {}], ['b1', {}], ['ball', {}]]);
+  physics.ballPlayerContacts = new Set();
+  const collider = name => ({ node: { name } });
+  physics.recordBallPlayerContact(collider('ball'), collider('a1'));
+  physics.recordBallPlayerContact(collider('a1'), collider('ball'));
+  physics.recordBallPlayerContact(collider('ball'), collider('Boundary'));
+  physics.recordBallPlayerContact(collider('a1'), collider('b1'));
+  assert.deepEqual([...physics.ballPlayerContacts], ['a1']);
 });
 test('反馈跟踪器对进球、开球违例、瞄准超时和终局各只发出一次事件', () => {
   const initial = createStandardMatchState('feedback', config, 7, catalog);
@@ -417,6 +443,18 @@ test('立体瞄准线由投影、主体和高光组成，无箭头且总长方�
       body.points[2][1]-body.points[1][1]) - config.aimDashGap*80) < 1e-8);
   }
 });
+test('C 罗干扰时瞄准线按权威技能状态摆动', () => {
+  const { screen, state, aimStrokes } = viewFixture();
+  const wobbling = { ...state, skills: { ...state.skills, aimWobble: {
+    sourcePlayerId: 'b1', targetOperatorId: 'a', amplitudeDegrees: 9,
+    frequencyHz: 1.4, phaseRadians: Math.PI / 2,
+  } } };
+  screen.render(wobbling, { playerId: 'a1', aim: { direction: { x: 1, y: 0 }, power: 0.5 } }, '', '');
+  const body = aimStrokes[1]; const start = body.points[0]; const end = body.points.at(-1);
+  assert.ok(end[0] > start[0]);
+  assert.ok(end[1] > start[1]);
+  assert.ok(Math.abs(Math.hypot(end[0] - start[0], end[1] - start[1]) - config.aimLength * 80) < 1e-8);
+});
 test('浅橘黄力度圆同心、透明，随力度增大并封顶，取消后清除', () => {
   const { screen, state, circles, lines } = viewFixture();
   const radii = [];
@@ -430,7 +468,7 @@ test('浅橘黄力度圆同心、透明，随力度增大并封顶，取消后�
     assert.equal(screen.powerCircle.fillColor.a, Math.round(config.powerCircleOpacity * 255));
   }
   assert.ok(radii[0] < radii[1] && radii[1] < radii[2]);
-  assert.equal(radii[2], config.powerCircleMaxRadius * 80); assert.equal(radii[3], radii[2]);
+  assert.ok(Math.abs(radii[2] - config.powerCircleMaxRadius * 80) < 1e-9); assert.equal(radii[3], radii[2]);
   screen.render(state, { playerId: 'a1', aim: null }, '', '');
   assert.equal(circles[0].radius, config.playerRadius*80); assert.equal(lines.length, 0);
   screen.render(state, null, '', ''); assert.equal(circles.length, 0); assert.equal(lines.length, 0);
@@ -468,11 +506,12 @@ test('视图随场景销毁后不再重复 destroy', () => {
   screen.dispose(); screen.dispose(); assert.equal(calls, 1);
   screen.root.valid = false; screen.dispose(); assert.equal(calls, 1);
 });
-test('圆形头像节点按实例缓存，换模板时只替换相应节点', () => {
+test('圆形头像节点按实例缓存，无头像球员改用姓名徽章', () => {
   class TestNode {
-    constructor(name) { this.name = name; this.children = []; this.layer = 1; this.destroyed = false; }
+    constructor(name) { this.name = name; this.children = []; this.components = []; this.layer = 1; this.destroyed = false; }
     addChild(node) { this.children.push(node); }
-    addComponent(ComponentType) { const item = new ComponentType(); item.node = this; return item; }
+    addComponent(ComponentType) { const item = new ComponentType(); item.node = this; this.components.push(item); return item; }
+    getComponent(ComponentType) { return this.components.find(item => item instanceof ComponentType); }
     setPosition(x, y) { this.position = { x, y }; }
     destroy() { this.destroyed = true; }
   }
@@ -480,9 +519,12 @@ test('圆形头像节点按实例缓存，换模板时只替换相应节点', ()
   cc.UITransform = class { setContentSize(width, height) { this.size = { width, height }; } };
   cc.Mask = class { static Type = { GRAPHICS_ELLIPSE: 1 }; };
   cc.Sprite = class { static SizeMode = { CUSTOM: 2 }; };
+  cc.Graphics = class { circle() {} fill() {} stroke() {} roundRect() {} };
+  cc.Label = class { static HorizontalAlign = { CENTER: 1 }; static VerticalAlign = { CENTER: 1 }; };
   const screen = Object.create(PrototypeView.prototype);
   screen.config = config; screen.catalog = catalog;
-  screen.portraitFrames = new Map(catalog.players.map(player => [player.id, { id: player.id }]));
+  screen.portraitFrames = new Map(catalog.players.filter(player => player.portraitPath)
+    .map(player => [player.id, { id: player.id }]));
   screen.portraitNodes = new Map(); screen.portraitLayer = new TestNode('Portraits');
   const state = createStandardMatchState('portraits', config, 9, catalog);
   screen.setPlayers(state);
@@ -492,11 +534,44 @@ test('圆形头像节点按实例缓存，换模板时只替换相应节点', ()
   screen.setPlayers(state);
   assert.equal(screen.portraitLayer.children.length, 10);
   const changed = { ...state, players: state.players.map((player, index) =>
-    index === 0 ? { ...player, templateId: 'messi' } : player) };
+    index === 0 ? { ...player, templateId: 'neymar' } : player) };
   screen.setPlayers(changed);
   assert.equal(first.destroyed, true);
-  assert.equal(screen.portraitNodes.get('blue-1').templateId, 'messi');
+  assert.equal(screen.portraitNodes.get('blue-1').templateId, 'neymar');
+  const fallback = screen.portraitNodes.get('blue-1').node;
+  assert.ok(fallback.children.some(child => child.components.some(component => component.string === '内马尔')));
   assert.equal(screen.portraitLayer.children.length, 11);
+
+  const lineup = Object.create(LineupView.prototype); lineup.catalog = catalog; lineup.portraits = screen.portraitFrames;
+  const lineupCard = lineup.playerCard(new TestNode('Lineup'), 'neymar', 112, 120, true);
+  assert.ok(lineupCard.children.some(child => child.name === 'Avatar'
+    && child.children.some(text => text.components.some(component => component.string === '内马尔'))));
+  const warehouse = Object.create(PlayerWarehouseView.prototype);
+  warehouse.catalog = catalog; warehouse.portraits = screen.portraitFrames;
+  const warehouseAvatar = warehouse.avatar(new TestNode('Warehouse'), 'neymar', 84, 0, 0);
+  assert.ok(warehouseAvatar.children.some(text => text.components.some(component => component.string === '内马尔')));
+});
+test('四角弹簧碰撞体使用满弹性、零摩擦且保持静态', () => {
+  class PhysicsNode {
+    constructor(name) { this.name = name; this.children = []; this.components = []; this.active = true; }
+    addChild(node) { this.children.push(node); }
+    addComponent(Type) { const component = new Type(); component.node = this; this.components.push(component); return component; }
+    setPosition(x, y) { this.position = { x, y }; }
+  }
+  cc.Node = PhysicsNode;
+  cc.RigidBody2D = class {};
+  cc.CircleCollider2D = class {};
+  cc.ERigidBody2DType = { Static: 'static' };
+  cc.PHYSICS_2D_PTM_RATIO = 32;
+  const physics = Object.create(CocosPhysics.prototype);
+  physics.root = new PhysicsNode('root'); physics.config = config;
+  physics.cornerBumper(config.fieldWidth / 2, config.fieldHeight / 2, config.cornerBumperRadius);
+  const node = physics.root.children[0];
+  const body = node.components.find(item => item instanceof cc.RigidBody2D);
+  const collider = node.components.find(item => item instanceof cc.CircleCollider2D);
+  assert.equal(node.name, 'CornerSpring'); assert.equal(body.type, 'static'); assert.equal(body.group, 1);
+  assert.equal(collider.radius, config.cornerBumperRadius * 32);
+  assert.equal(collider.restitution, 1); assert.equal(collider.friction, 0);
 });
 test('物理发射读取当前球员专属冲量', () => {
   const physics = Object.create(CocosPhysics.prototype);

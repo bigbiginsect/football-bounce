@@ -60,10 +60,15 @@ export class Boot extends Component {
         const catalogAsset = await new Promise<JsonAsset>((resolve, reject) =>
             bundle.load('config/players', JsonAsset, (error, asset) => error ? reject(error) : resolve(asset)));
         this.catalog = parsePlayerCatalog(catalogAsset.json);
-        const frames = await Promise.all(this.catalog.players.map(template =>
-            new Promise<readonly [string, SpriteFrame]>((resolve, reject) =>
-                bundle.load(`${template.portraitPath}/spriteFrame`, SpriteFrame, (error, frame) =>
-                    error ? reject(error) : resolve([template.id, frame])))));
+        const frameLoads: Promise<readonly [string, SpriteFrame]>[] = [];
+        for (const template of this.catalog.players) {
+            const portraitPath = template.portraitPath;
+            if (!portraitPath) continue;
+            frameLoads.push(new Promise<readonly [string, SpriteFrame]>((resolve, reject) =>
+                bundle.load(`${portraitPath}/spriteFrame`, SpriteFrame, (error, frame) =>
+                    error ? reject(error) : resolve([template.id, frame]))));
+        }
+        const frames = await Promise.all(frameLoads);
         const soundCues: readonly SoundCue[] = ['launch', 'collision', 'goal', 'timeout', 'finish'];
         const sounds = await Promise.all(soundCues.map(cue =>
             new Promise<readonly [SoundCue, AudioClip]>((resolve, reject) =>
@@ -201,6 +206,7 @@ export class Boot extends Component {
         const state = this.match.getSnapshot(); if (state.phase !== 'Aiming') return;
         const point = this.screen.toField(event.getLocation());
         const player = state.players.find(p => p.ownerId === state.activeOperatorId
+            && (!state.skills.forcedPlayerId || p.instanceId === state.skills.forcedPlayerId)
             && Math.hypot(p.position.x - point.x, p.position.y - point.y) <= this.config.playerRadius);
         if (player) this.gesture!.begin(id, player.instanceId, point);
     };
@@ -316,24 +322,31 @@ export class Boot extends Component {
         const state = this.match.getSnapshot(); const status = this.match.getSimulationStatus();
         let gesture = this.gesture?.preview() ?? null;
         const selected = gesture && state.players.find(player => player.instanceId === gesture!.playerId);
-        if (gesture && (state.phase !== 'Aiming' || selected?.ownerId !== state.activeOperatorId)) {
+        if (gesture && (state.phase !== 'Aiming' || selected?.ownerId !== state.activeOperatorId
+            || Boolean(state.skills.forcedPlayerId && selected.instanceId !== state.skills.forcedPlayerId))) {
             this.gesture?.cancel(); gesture = null;
         }
         const side = state.activeOperatorId === 'blue' ? '蓝方' : '红方';
         const reasons = { ready: `${side}行动`, moving: '运动中，请等待停止', stopped: `${side}行动`,
             timeout: `运动超时，${side}行动`, invalid: `物理状态异常，${side}行动`,
             goal: `进球！${side}开球`, 'kickoff-violation': `开球违例，换${side}开球`,
-            'turn-timeout': `瞄准超时，${side}行动`, finished: '比赛结束' };
+            'turn-timeout': `瞄准超时，${side}行动`, 'skill-bonus': '内马尔连击 · 追加行动',
+            finished: '比赛结束' };
         const result = state.result?.winnerId === null ? '平局'
             : state.result?.winnerId === 'blue' ? '蓝方获胜' : state.result ? '红方获胜' : '';
         const turnSeconds = Math.ceil(state.clock.turnRemainingMs / 1000);
+        const skillTitle = state.skills.forcedPlayerId ? '内马尔连击 · 追加行动'
+            : state.skills.aimWobble?.targetOperatorId === state.activeOperatorId ? 'C罗干扰 · 瞄准摆动中' : '';
         const title = this.paused ? '已暂停，回到画面继续'
             : state.phase === 'Finished' ? `比赛结束 · ${result}`
-                : gesture ? `力度 ${Math.round((gesture.aim?.power ?? 0) * 100)}% · 松手发射`
+                : gesture ? `${skillTitle ? `${skillTitle} · ` : ''}力度 ${Math.round((gesture.aim?.power ?? 0) * 100)}% · 松手发射`
                     : state.phase === 'Aiming' && turnSeconds <= 5 ? `${side}行动 · 仅剩 ${turnSeconds} 秒`
-                        : reasons[status.reason];
+                        : skillTitle || reasons[status.reason];
+        const forcedPlayer = state.skills.forcedPlayerId
+            ? state.players.find(player => player.instanceId === state.skills.forcedPlayerId) : undefined;
         this.screen.render(state, gesture, this.message || title,
             `第 ${state.turnNumber} 回合 · 先手 ${state.random.firstOperatorId === 'blue' ? '蓝方' : '红方'}`
+            + `${forcedPlayer ? ' · 仅可操作内马尔' : ''}`
             + `${status.droppedSeconds > 0.01 ? ' · 卡顿已限步' : ''}`,
             this.physics?.getBallAngle?.() ?? 0, this.feedbackOverlay);
     }

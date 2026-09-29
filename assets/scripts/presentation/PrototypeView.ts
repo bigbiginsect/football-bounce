@@ -7,6 +7,7 @@ import type { PlayerCatalog } from '../core/PlayerCatalog';
 import { getPlayerTemplate, playerGameplayValues } from '../core/PlayerCatalog';
 import type { MatchOverlay, MatchSide } from './MatchFeedback';
 import { matchClock, sideLabel } from './MatchFeedback';
+import { effectiveAimDirection } from '../core/PlayerSkills';
 
 const pixelsPerMeter = 80;
 /** 位置读取权威状态；本地皮球图案角度读取物理刚体。物理节点不挂在本视图下。 */
@@ -48,6 +49,7 @@ export class PrototypeView {
         const g = field.addComponent(Graphics);
         const w = config.fieldWidth * pixelsPerMeter; const h = config.fieldHeight * pixelsPerMeter;
         this.drawGrass(g, w, h);
+        this.drawCornerSprings(g, w, h);
         g.strokeColor = new Color(234, 244, 223, 232); g.lineWidth = 3;
         const goalWidth = config.goalWidth * pixelsPerMeter;
         const goalDepth = config.goalDepth * pixelsPerMeter;
@@ -119,6 +121,37 @@ export class PrototypeView {
         g.rect(-width / 2, height / 2 - 10, width, 10);
         g.fill();
     }
+    private drawCornerSprings(g: Graphics, width: number, height: number): void {
+        const radius = this.config.cornerBumperRadius * pixelsPerMeter;
+        const sector = (cx: number, cy: number, sx: number, sy: number, r: number): void => {
+            g.moveTo(cx, cy);
+            for (let step = 0; step <= 14; step++) {
+                const angle = step / 14 * Math.PI / 2;
+                g.lineTo(cx - sx * Math.cos(angle) * r, cy - sy * Math.sin(angle) * r);
+            }
+            g.lineTo(cx, cy); g.fill();
+        };
+        const curve = (cx: number, cy: number, sx: number, sy: number, r: number): void => {
+            for (let step = 0; step <= 14; step++) {
+                const angle = step / 14 * Math.PI / 2;
+                const x = cx - sx * Math.cos(angle) * r;
+                const y = cy - sy * Math.sin(angle) * r;
+                if (step === 0) g.moveTo(x, y); else g.lineTo(x, y);
+            }
+            g.stroke();
+        };
+        for (const sx of [-1, 1]) for (const sy of [-1, 1]) {
+            const x = sx * width / 2; const y = sy * height / 2;
+            g.fillColor = new Color(77, 38, 26, 230); sector(x, y, sx, sy, radius + 4);
+            g.fillColor = new Color(244, 128, 42); sector(x, y, sx, sy, radius);
+            g.strokeColor = new Color(255, 230, 106); g.lineWidth = 7;
+            curve(x, y, sx, sy, radius * 0.78);
+            g.strokeColor = new Color(255, 249, 205); g.lineWidth = 3;
+            curve(x, y, sx, sy, radius * 0.56);
+            g.fillColor = new Color(255, 229, 88);
+            g.circle(x - sx * radius * 0.34, y - sy * radius * 0.34, 5); g.fill();
+        }
+    }
     private node(parent: Node, name: string, width: number, height: number): Node {
         const node = new Node(name); node.layer = parent.layer; parent.addChild(node);
         node.addComponent(UITransform).setContentSize(width, height); return node;
@@ -159,12 +192,19 @@ export class PrototypeView {
             if (this.portraitNodes.has(player.instanceId)) continue;
             const template = getPlayerTemplate(this.catalog, player.templateId);
             const frame = this.portraitFrames.get(template.id);
-            if (!frame) throw new Error(`缺少头像资源：${template.id}`);
             const node = this.node(this.portraitLayer, player.instanceId, diameter, diameter);
-            const mask = node.addComponent(Mask); mask.type = Mask.Type.GRAPHICS_ELLIPSE; mask.segments = 32;
-            const imageNode = this.node(node, 'Image', diameter, diameter);
-            const sprite = imageNode.addComponent(Sprite); sprite.sizeMode = Sprite.SizeMode.CUSTOM;
-            sprite.spriteFrame = frame;
+            if (frame) {
+                const mask = node.addComponent(Mask); mask.type = Mask.Type.GRAPHICS_ELLIPSE; mask.segments = 32;
+                const imageNode = this.node(node, 'Image', diameter, diameter);
+                const sprite = imageNode.addComponent(Sprite); sprite.sizeMode = Sprite.SizeMode.CUSTOM;
+                sprite.spriteFrame = frame;
+            } else {
+                const placeholder = node.addComponent(Graphics); placeholder.fillColor = new Color(15, 55, 66, 215);
+                placeholder.circle(0, 0, diameter / 2); placeholder.fill();
+                const text = this.label(node, template.name, 0, template.name.length > 5 ? 8 : 10);
+                text.node.getComponent(UITransform)!.setContentSize(diameter - 3, diameter - 3);
+                text.enableWrapText = true; text.lineHeight = text.fontSize + 1;
+            }
             this.portraitNodes.set(player.instanceId, { node, templateId: player.templateId });
         }
     }
@@ -187,7 +227,7 @@ export class PrototypeView {
                 player.position.x * pixelsPerMeter, player.position.y * pixelsPerMeter);
         }
         this.drawBall(g, state.ball.position.x * pixelsPerMeter, state.ball.position.y * pixelsPerMeter,
-            this.config.ballRadius * pixelsPerMeter, ballAngle);
+            this.config.ballRadius * pixelsPerMeter, ballAngle, state.ball.velocity);
         const a = this.aim; a.clear();
         const powerCircle = this.powerCircle; powerCircle.clear();
         if (gesture) {
@@ -204,7 +244,7 @@ export class PrototypeView {
         }
         if (gesture?.aim) {
             const player = state.players.find(p => p.instanceId === gesture.playerId)!;
-            const { direction } = gesture.aim;
+            const direction = effectiveAimDirection(state, gesture.aim.direction);
             const x = player.position.x * pixelsPerMeter; const y = player.position.y * pixelsPerMeter;
             // 精度决定可见瞄准长度；力量决定力度盘上限，二者都由球员配置只读派生。
             const length = (this.catalog
@@ -264,8 +304,16 @@ export class PrototypeView {
             this.eventDetail.string = feedback.detail;
         }
     }
-    private drawBall(g: Graphics, x: number, y: number, radius: number, angleDegrees: number): void {
-        g.fillColor = Color.WHITE; g.circle(x, y, radius); g.fill();
+    private drawBall(g: Graphics, x: number, y: number, radius: number, angleDegrees: number,
+        velocity: Vector2Data): void {
+        const speed = Math.hypot(velocity.x, velocity.y);
+        const motionX = speed > 1e-6 ? velocity.x / speed * Math.min(3, speed * 0.3) : 0;
+        const motionY = speed > 1e-6 ? velocity.y / speed * Math.min(3, speed * 0.3) : 0;
+        // 落地阴影稍微拖在平动方向后方；球面光照固定，黑块和金色旋转标记跟随刚体角度。
+        g.fillColor = new Color(4, 28, 28, 105); g.circle(x + 2 - motionX, y - 4 - motionY, radius * 1.08); g.fill();
+        g.fillColor = new Color(203, 207, 199); g.circle(x, y - radius * 0.04, radius); g.fill();
+        g.fillColor = new Color(248, 246, 229); g.circle(x - radius * 0.04, y + radius * 0.08, radius * 0.91); g.fill();
+        g.fillColor = new Color(255, 255, 250, 210); g.circle(x - radius * 0.32, y + radius * 0.38, radius * 0.23); g.fill();
         g.strokeColor = new Color(28, 31, 35); g.lineWidth = Math.max(1, radius * 0.1);
         g.circle(x, y, radius); g.stroke();
         const angle = angleDegrees * Math.PI / 180;
@@ -290,6 +338,16 @@ export class PrototypeView {
             g.lineTo(x + Math.cos(direction) * radius * 0.5, y + Math.sin(direction) * radius * 0.5);
             g.stroke();
         }
+        const markerDirection = angle + Math.PI * 0.17;
+        g.fillColor = new Color(255, 183, 39);
+        g.circle(x + Math.cos(markerDirection) * radius * 0.48,
+            y + Math.sin(markerDirection) * radius * 0.48, radius * 0.105); g.fill();
+        g.strokeColor = new Color(255, 235, 151, 220); g.lineWidth = Math.max(1, radius * 0.075);
+        const tangentX = -Math.sin(markerDirection); const tangentY = Math.cos(markerDirection);
+        const markerX = x + Math.cos(markerDirection) * radius * 0.48;
+        const markerY = y + Math.sin(markerDirection) * radius * 0.48;
+        g.moveTo(markerX - tangentX * radius * 0.12, markerY - tangentY * radius * 0.12);
+        g.lineTo(markerX + tangentX * radius * 0.12, markerY + tangentY * radius * 0.12); g.stroke();
     }
     dispose(): void { if (isValid(this.root, true)) this.root.destroy(); }
 }

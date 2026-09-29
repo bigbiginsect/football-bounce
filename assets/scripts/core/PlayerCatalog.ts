@@ -4,7 +4,7 @@ export interface PlayerTemplate {
     readonly id: string;
     readonly name: string;
     /** resources 内 SpriteFrame 的图片路径，不含 /spriteFrame 后缀。 */
-    readonly portraitPath: string;
+    readonly portraitPath?: string;
     readonly weight: number;
     readonly power: number;
     readonly precision: number;
@@ -21,6 +21,11 @@ export interface PlayerCatalog {
     readonly players: readonly PlayerTemplate[];
 }
 
+export interface PlayerSkillPresentation {
+    readonly name: string;
+    readonly description: string;
+}
+
 const text = (value: unknown): value is string => typeof value === 'string' && value.trim().length > 0;
 const object = (value: unknown): value is Record<string, unknown> =>
     typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -33,7 +38,8 @@ export function parsePlayerCatalog(input: unknown): PlayerCatalog {
     const ids = new Set<string>();
     const players = input.players.map((entry: unknown): PlayerTemplate => {
         if (!object(entry) || !text(entry.id) || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(entry.id)
-            || !text(entry.name) || entry.portraitPath !== `portraits/${entry.id}`) {
+            || !text(entry.name)
+            || (entry.portraitPath !== undefined && entry.portraitPath !== `portraits/${entry.id}`)) {
             throw new Error('球员 ID、名称或头像路径无效');
         }
         if (ids.has(entry.id)) throw new Error(`球员 ID 重复：${entry.id}`);
@@ -57,14 +63,44 @@ export function parsePlayerCatalog(input: unknown): PlayerCatalog {
                 }
                 params[key] = value;
             }
+            if (entry.skill.id === 'aim-wobble') {
+                const chance = params.chance; const amplitude = params.amplitudeDegrees;
+                const frequency = params.frequencyHz;
+                if (typeof chance !== 'number' || chance < 0 || chance > 1
+                    || typeof amplitude !== 'number' || amplitude <= 0 || amplitude > 20
+                    || typeof frequency !== 'number' || frequency < 0.2 || frequency > 4) {
+                    throw new Error(`球员 ${entry.id} 的瞄准干扰技能参数无效`);
+                }
+            }
+            if (entry.skill.id === 'ball-hit-encore') {
+                const everyTurns = params.everyTurns;
+                if (typeof everyTurns !== 'number' || !Number.isInteger(everyTurns)
+                    || everyTurns < 2 || everyTurns > 10) {
+                    throw new Error(`球员 ${entry.id} 的追加行动技能参数无效`);
+                }
+            }
             skill = Object.freeze({ id: entry.skill.id, params: Object.freeze(params) });
         }
-        return Object.freeze({ id: entry.id, name: entry.name, portraitPath: entry.portraitPath,
+        return Object.freeze({ id: entry.id, name: entry.name,
+            ...(entry.portraitPath ? { portraitPath: entry.portraitPath } : {}),
             weight: entry.weight as number, power: entry.power as number,
             precision: entry.precision as number, mentality: entry.mentality as number,
             curve: entry.curve as number, quip: entry.quip, ...(skill ? { skill } : {}) });
     });
     return Object.freeze({ version: input.version, players: Object.freeze(players) });
+}
+
+export function playerSkillPresentation(template: PlayerTemplate): PlayerSkillPresentation | null {
+    if (template.skill?.id === 'aim-wobble') {
+        const chance = Number(template.skill.params.chance);
+        const amplitude = Number(template.skill.params.amplitudeDegrees);
+        return { name: '压迫气场', description: `行动后有 ${Math.round(chance * 100)}% 概率让对手下一次瞄准线左右摆动，最大偏转 ${amplitude}°。` };
+    }
+    if (template.skill?.id === 'ball-hit-encore') {
+        const everyTurns = Number(template.skill.params.everyTurns);
+        return { name: '桑巴连击', description: `每第 ${everyTurns} 次正常行动，若皮球碰到敌方球员且未进球，可由内马尔追加行动一次。` };
+    }
+    return null;
 }
 
 export function getPlayerTemplate(catalog: PlayerCatalog, id: string): PlayerTemplate {
@@ -73,13 +109,18 @@ export function getPlayerTemplate(catalog: PlayerCatalog, id: string): PlayerTem
     return player;
 }
 
-/** 评分 50 对应 stage2 基准；力量同时决定实际冲量与力度盘最大视觉尺寸。 */
+/**
+ * 评分 50 对应 stage2 基准。重量决定质量和碰撞动量；最大冲量同步补偿质量，
+ * 因而同力量评分的起步速度近似一致，而重球员撞击轻球员时仍保留更大动量。
+ */
 export function playerGameplayValues(template: PlayerTemplate, config: PrototypeConfig) {
-    const powerScale = 0.9 + template.power / 500;
+    const massScale = Math.pow(config.weightMassFactorPer50, (template.weight - 50) / 50);
+    const powerScale = 1 + (template.power - 50) * config.powerSpeedScalePerPoint;
     return {
-        mass: config.playerMass * (0.9 + template.weight / 500),
-        maxImpulse: config.maxImpulse * powerScale,
-        aimLength: config.aimLength * (0.8 + template.precision / 250),
-        powerCircleMaxRadius: config.powerCircleMaxRadius * (0.8 + template.power / 250),
+        mass: config.playerMass * massScale,
+        maxImpulse: config.maxImpulse * massScale * powerScale,
+        aimLength: config.aimLength * (1 + (template.precision - 50) * config.precisionAimScalePerPoint),
+        powerCircleMaxRadius: config.powerCircleMaxRadius
+            * (1 + (template.power - 50) * config.powerCircleScalePerPoint),
     };
 }

@@ -8,6 +8,23 @@ export interface BoundaryWall {
     readonly height: number;
 }
 
+export interface CornerBumper {
+    readonly x: number;
+    readonly y: number;
+    readonly radius: number;
+}
+
+/** 圆心位于场地四个边界交点；朝场内的四分之一圆把物体导离直角。 */
+export function createCornerBumpers(c: PrototypeConfig): CornerBumper[] {
+    const result: CornerBumper[] = [];
+    for (const x of [-c.fieldWidth / 2, c.fieldWidth / 2]) {
+        for (const y of [-c.fieldHeight / 2, c.fieldHeight / 2]) {
+            result.push({ x, y, radius: c.cornerBumperRadius });
+        }
+    }
+    return result;
+}
+
 /** 墙体坐标使用米；球门侧壁从门线向外延伸，不能侵入场内形成挡球台阶。 */
 export function createBoundaryWalls(c: PrototypeConfig): BoundaryWall[] {
     const walls: BoundaryWall[] = [

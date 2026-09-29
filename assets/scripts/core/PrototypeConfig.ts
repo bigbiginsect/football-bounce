@@ -1,20 +1,25 @@
-import type { GameState } from './GameState';
+import type { GameState, PlayerState } from './GameState';
 import type { PlayerCatalog } from './PlayerCatalog';
 import type { MatchLineups } from './Lineup';
 import { defaultLineups, validateLineups } from './Lineup';
 
 /** 阶段 1 物理基线与阶段 2 标准模式参数。修改后停止并重新运行预览，同时更新 version。 */
 export const prototypeConfig = {
-    version: 'stage3-002',
+    version: 'stage3-004',
     fieldWidth: 6.8, fieldHeight: 10.5, wallThickness: 0.25,
     goalWidth: 2.4, goalDepth: 0.6,
-    playerRadius: 0.28, ballRadius: 0.15,
+    playerRadius: 0.30, ballRadius: 0.15,
     playerMass: 2, ballMass: 0.45,
     playerDamping: 2, ballDamping: 0.6,
     ballAngularDamping: 0.9,
     ballLowSpeedDamping: 2, ballLowSpeedMultiplier: 2.5,
-    friction: 0.15, playerRestitution: 0.75, ballRestitution: 0.85, wallRestitution: 0.85,
-    maxImpulse: 25, maxSpeed: 15,
+    friction: 0.15, playerRestitution: 0.88, ballRestitution: 0.85, wallRestitution: 0.85,
+    cornerBumperRadius: 0.52, cornerBumperRestitution: 1, cornerBumperFriction: 0,
+    maxImpulse: 25, maxSpeed: 16.5,
+    weightMassFactorPer50: 3.2,
+    powerSpeedScalePerPoint: 0.006,
+    precisionAimScalePerPoint: 0.006,
+    powerCircleScalePerPoint: 0.006,
     dragDeadZone: 0.08, fullPowerDrag: 1.5, aimLength: 2,
     aimDashLength: 0.12, aimDashGap: 0.08,
     powerCircleMaxRadius: 0.9, powerCircleOpacity: 0.22,
@@ -39,7 +44,12 @@ export function freezeConfig(input: unknown): PrototypeConfig {
         ballLowSpeedDamping: [0, 10], ballLowSpeedMultiplier: [1, 10],
         friction: [0, 1],
         playerRestitution: [0, 1], ballRestitution: [0, 1], wallRestitution: [0, 1],
+        cornerBumperRadius: [0.15, 1.1], cornerBumperRestitution: [0, 1], cornerBumperFriction: [0, 1],
         maxImpulse: [0.1, 30], maxSpeed: [0.5, 20], dragDeadZone: [0, 0.5],
+        weightMassFactorPer50: [1, 6],
+        powerSpeedScalePerPoint: [0, 0.019],
+        precisionAimScalePerPoint: [0, 0.019],
+        powerCircleScalePerPoint: [0, 0.019],
         fullPowerDrag: [0.1, 3], aimLength: [0.1, 3], fixedStep: [1 / 120, 1 / 30],
         aimDashLength: [0.02, 0.5], aimDashGap: [0.02, 0.5],
         powerCircleMaxRadius: [0.4, 2], powerCircleOpacity: [0.05, 0.5],
@@ -62,6 +72,9 @@ export function freezeConfig(input: unknown): PrototypeConfig {
     if (Number(data.wallReleaseGap) <= Number(data.wallContactTolerance)
         || Number(data.powerCircleMaxRadius) <= Number(data.playerRadius)) {
         throw new Error('贴墙释放间隙必须大于接触带，力度圆最大半径必须大于球员半径');
+    }
+    if (Number(data.cornerBumperRadius) <= Math.max(Number(data.playerRadius), Number(data.ballRadius))) {
+        throw new Error('四角弹簧半径必须大于场上圆形物体半径');
     }
     if (Number(data.goalWidth) + 2 * Number(data.playerRadius) >= Number(data.fieldWidth)
         || Number(data.goalWidth) <= 2 * Number(data.ballRadius)) {
@@ -89,7 +102,7 @@ export function createPrototypeState(matchId: string, config: PrototypeConfig, f
             ? { x: config.fieldWidth / 2 - config.ballRadius,
                 y: fixture === 'corner' ? config.fieldHeight / 2 - config.ballRadius : 0 }
             : { x: 0, y: -0.25 }, pending: false };
-    return { schemaVersion: 4, revision: 0, matchId, modeId: 'practice', configVersion: config.version,
+    return { schemaVersion: 5, revision: 0, matchId, modeId: 'practice', configVersion: config.version,
         catalogVersion: 'practice-fixture',
         turnNumber: 1, phase: 'Aiming', activeOperatorId: 'a',
         clock: { matchDurationMs: config.matchSeconds * 1000, elapsedMs: 0,
@@ -98,14 +111,15 @@ export function createPrototypeState(matchId: string, config: PrototypeConfig, f
         random: { seed: 1, state: 1, firstOperatorId: 'a' }, score: { a: 0, b: 0 },
         players, ball: fixture === 'wall' || fixture === 'corner'
             ? body(config.fieldWidth / 2 - config.ballRadius, fixture === 'corner' ? config.fieldHeight / 2 - config.ballRadius : 0)
-            : body(0, -0.25), kickoff, result: null };
+            : body(0, -0.25), kickoff,
+        skills: { launchCounts: {}, aimWobble: null, bonus: null, forcedPlayerId: null }, result: null };
 }
 
-function nextRandomState(seed: number): number {
+export function nextRandomState(seed: number): number {
     return (seed + 0x6d2b79f5) >>> 0;
 }
 
-function randomValue(state: number): number {
+export function randomValue(state: number): number {
     let value = state;
     value = Math.imul(value ^ (value >>> 15), value | 1);
     value ^= value + Math.imul(value ^ (value >>> 7), value | 61);
@@ -121,23 +135,26 @@ export function createStandardMatchState(matchId: string, config: PrototypeConfi
     const firstOperatorId = randomValue(randomState) < 0.5 ? 'blue' : 'red';
     const body = (x: number, y: number) => ({ position: { x, y }, velocity: { x: 0, y: 0 } });
     const lineups = validateLineups(selections, catalog, config);
-    const players = [...lineups.blue.map((selection, index) => ({
-        ...body(selection.position.x, selection.position.y), instanceId: `blue-${index + 1}`,
-        templateId: selection.templateId, ownerId: 'blue' })),
-    ...lineups.red.map((selection, index) => ({
-        ...body(selection.position.x, selection.position.y), instanceId: `red-${index + 1}`,
-        templateId: selection.templateId, ownerId: 'red' }))];
+    const player = (ownerId: 'blue' | 'red', selection: MatchLineups['blue'][number], index: number): PlayerState => {
+        const template = catalog.players.find(item => item.id === selection.templateId)!;
+        return { ...body(selection.position.x, selection.position.y), instanceId: `${ownerId}-${index + 1}`,
+            templateId: selection.templateId, ownerId,
+            ...(template.skill ? { skill: { id: template.skill.id, params: { ...template.skill.params } } } : {}) };
+    };
+    const players = [...lineups.blue.map((selection, index) => player('blue', selection, index)),
+        ...lineups.red.map((selection, index) => player('red', selection, index))];
     const kickoff = { players: players.map(p => ({ instanceId: p.instanceId, position: { ...p.position } })),
         ballPosition: { x: 0, y: 0 }, pending: true };
     const matchDurationMs = config.matchSeconds * 1000;
     const turnDurationMs = config.aimingSeconds * 1000;
-    return { schemaVersion: 4, revision: 0, matchId, modeId: 'standard', configVersion: config.version,
+    return { schemaVersion: 5, revision: 0, matchId, modeId: 'standard', configVersion: config.version,
         catalogVersion: catalog.version,
         turnNumber: 1, phase: 'Aiming', activeOperatorId: firstOperatorId,
         clock: { matchDurationMs, elapsedMs: 0, remainingMs: matchDurationMs,
             turnDurationMs, turnRemainingMs: turnDurationMs },
         random: { seed: normalizedSeed, state: randomState, firstOperatorId },
-        score: { blue: 0, red: 0 }, players, ball: body(0, 0), kickoff, result: null };
+        score: { blue: 0, red: 0 }, players, ball: body(0, 0), kickoff,
+        skills: { launchCounts: {}, aimWobble: null, bonus: null, forcedPlayerId: null }, result: null };
 }
 
 /** 返回进球队；要求皮球整体越线且整体位于两门柱之间。 */

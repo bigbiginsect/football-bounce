@@ -58,7 +58,11 @@ test('配置冻结副本，非法参数阻止启动', () => {
     { wallReleaseGap: 0.02, wallContactTolerance: 0.03 }, { aimDashGap: 0 },
     { powerCircleOpacity: 1 }, { playerRadius: 0.4, powerCircleMaxRadius: 0.4 },
     { ballAngularDamping: -1 },
-    { ballLowSpeedDamping: NaN }, { ballLowSpeedMultiplier: 0.5 }]) {
+    { ballLowSpeedDamping: NaN }, { ballLowSpeedMultiplier: 0.5 },
+    { weightMassFactorPer50: 0.9 }, { powerSpeedScalePerPoint: 0.02 },
+    { precisionAimScalePerPoint: -0.1 }, { powerCircleScalePerPoint: Infinity },
+    { cornerBumperRestitution: 1.1 }, { cornerBumperFriction: -0.1 },
+    { cornerBumperRadius: config.playerRadius }]) {
     assert.throws(() => freezeConfig({ ...config, ...patch }));
   }
   assert.throws(() => freezeConfig(null));

@@ -1,11 +1,21 @@
 {
-  "version": "players-003",
+  "version": "players-005",
   "players": [
     { "id": "messi", "name": "梅西", "portraitPath": "portraits/messi", "weight": 55, "power": 84, "precision": 96, "mentality": 96, "curve": 98, "quip": "球一到脚下，防守人的导航就开始重新规划。" },
-    { "id": "cristiano-ronaldo", "name": "C 罗", "portraitPath": "portraits/cristiano-ronaldo", "weight": 78, "power": 96, "precision": 82, "mentality": 95, "curve": 86, "quip": "只要还有一秒，他就觉得记分牌还能再跳一下。" },
+    { "id": "cristiano-ronaldo", "name": "C 罗", "portraitPath": "portraits/cristiano-ronaldo", "weight": 78, "power": 96, "precision": 82, "mentality": 95, "curve": 86, "quip": "只要还有一秒，他就觉得记分牌还能再跳一下。", "skill": { "id": "aim-wobble", "params": { "chance": 0.35, "amplitudeDegrees": 9, "frequencyHz": 1.4 } } },
     { "id": "mbappe", "name": "姆巴佩", "portraitPath": "portraits/mbappe", "weight": 62, "power": 90, "precision": 82, "mentality": 88, "curve": 84, "quip": "你刚看清他的背影，他已经在门前等球了。" },
     { "id": "de-bruyne", "name": "德布劳内", "portraitPath": "portraits/de-bruyne", "weight": 70, "power": 84, "precision": 94, "mentality": 92, "curve": 96, "quip": "传球线路别人看不见，他已经提前画好了。" },
     { "id": "van-dijk", "name": "范戴克", "portraitPath": "portraits/van-dijk", "weight": 95, "power": 77, "precision": 78, "mentality": 95, "curve": 72, "quip": "站在那里就像一扇门，而且今天不打算开。" },
-    { "id": "haaland", "name": "哈兰德", "portraitPath": "portraits/haaland", "weight": 90, "power": 94, "precision": 72, "mentality": 89, "curve": 78, "quip": "皮球进禁区以后，他通常只问一句：吃了吗？" }
+    { "id": "haaland", "name": "哈兰德", "portraitPath": "portraits/haaland", "weight": 90, "power": 94, "precision": 72, "mentality": 89, "curve": 78, "quip": "皮球进禁区以后，他通常只问一句：吃了吗？" },
+    { "id": "neymar", "name": "内马尔", "weight": 48, "power": 82, "precision": 94, "mentality": 82, "curve": 99, "quip": "他把一条直线走成了看台会起立的弧线。", "skill": { "id": "ball-hit-encore", "params": { "everyTurns": 3 } } },
+    { "id": "salah", "name": "萨拉赫", "weight": 60, "power": 90, "precision": 87, "mentality": 91, "curve": 88, "quip": "左脚一抬，门将就开始猜下一道题。" },
+    { "id": "modric", "name": "莫德里奇", "weight": 55, "power": 70, "precision": 96, "mentality": 97, "curve": 94, "quip": "球场再拥挤，他也总能找到一条安静的路。" },
+    { "id": "kante", "name": "坎特", "weight": 62, "power": 65, "precision": 83, "mentality": 96, "curve": 72, "quip": "你以为那里没人，他已经把球带走了。" },
+    { "id": "rodri", "name": "罗德里", "weight": 85, "power": 84, "precision": 91, "mentality": 97, "curve": 85, "quip": "节奏交给他以后，比赛像多了一只钟。" },
+    { "id": "lewandowski", "name": "莱万多夫斯基", "weight": 82, "power": 92, "precision": 86, "mentality": 95, "curve": 86, "quip": "禁区里的半次机会，到他脚下也能凑成一次。" },
+    { "id": "vinicius", "name": "维尼修斯", "weight": 50, "power": 88, "precision": 78, "mentality": 82, "curve": 91, "quip": "他一加速，边线都像在往后退。" },
+    { "id": "bellingham", "name": "贝林厄姆", "weight": 76, "power": 86, "precision": 87, "mentality": 94, "curve": 83, "quip": "哪里需要多一个人，他就会从那里出现。" },
+    { "id": "ruben-dias", "name": "鲁本·迪亚斯", "weight": 98, "power": 80, "precision": 68, "mentality": 96, "curve": 65, "quip": "他不追着危险跑，他让危险自己绕路。" },
+    { "id": "son-heung-min", "name": "孙兴慜", "weight": 64, "power": 93, "precision": 89, "mentality": 92, "curve": 88, "quip": "左右脚都能开门，所以门将很难选锁。" }
   ]
 }

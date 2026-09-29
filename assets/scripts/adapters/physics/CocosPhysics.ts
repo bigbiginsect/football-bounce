@@ -1,4 +1,4 @@
-import { Node, RigidBody2D, CircleCollider2D, BoxCollider2D, ERigidBody2DType,
+import { Node, RigidBody2D, CircleCollider2D, BoxCollider2D, Collider2D, ERigidBody2DType,
     PhysicsSystem2D, Vec2, PHYSICS_2D_PTM_RATIO, Contact2DType, IPhysics2DContact } from 'cc';
 import type { Command } from '../../core/Command';
 import type { BodyState, GameState } from '../../core/GameState';
@@ -6,7 +6,7 @@ import type { PhysicsPort, PhysicsFrame } from '../../core/PhysicsPort';
 import type { PrototypeConfig } from '../../core/PrototypeConfig';
 import { detectGoal } from '../../core/PrototypeConfig';
 import { releaseWallContact } from '../../core/WallContact';
-import { createBoundaryWalls } from '../../core/BoundaryGeometry';
+import { createBoundaryWalls, createCornerBumpers } from '../../core/BoundaryGeometry';
 import { getPlayerTemplate, playerGameplayValues, PlayerCatalog } from '../../core/PlayerCatalog';
 
 /** 物理根节点不参与 UI 缩放。位置为引擎单位，速度/冲量按 Box2D 的 SI 单位。 */
@@ -14,6 +14,7 @@ export class CocosPhysics implements PhysicsPort {
     private readonly root = new Node('PrototypePhysics');
     private readonly bodies = new Map<string, RigidBody2D>();
     private readonly impulses = new Map<string, number>();
+    private readonly ballPlayerContacts = new Set<string>();
     private readonly system = PhysicsSystem2D.instance;
     private strongestImpact = 0;
     private readonly previous = { auto: this.system.autoSimulation, gravity: this.system.gravity.clone(),
@@ -32,6 +33,7 @@ export class CocosPhysics implements PhysicsPort {
         this.system.collisionMatrix[1] = 1;
         const c = config;
         for (const wall of createBoundaryWalls(c)) this.wall(wall.x, wall.y, wall.width, wall.height);
+        for (const bumper of createCornerBumpers(c)) this.cornerBumper(bumper.x, bumper.y, bumper.radius);
         for (const player of state.players) {
             const values = playerGameplayValues(getPlayerTemplate(catalog, player.templateId), config);
             this.circle(player.instanceId, player, false, values.mass);
@@ -51,12 +53,24 @@ export class CocosPhysics implements PhysicsPort {
         node.active = true;
     }
 
+    private cornerBumper(x: number, y: number, radius: number): void {
+        const node = new Node('CornerSpring'); node.active = false; this.root.addChild(node);
+        node.setPosition(x * PHYSICS_2D_PTM_RATIO, y * PHYSICS_2D_PTM_RATIO);
+        const body = node.addComponent(RigidBody2D); body.type = ERigidBody2DType.Static; body.group = 1;
+        const collider = node.addComponent(CircleCollider2D);
+        collider.radius = radius * PHYSICS_2D_PTM_RATIO;
+        collider.friction = this.config.cornerBumperFriction;
+        collider.restitution = this.config.cornerBumperRestitution;
+        node.active = true;
+    }
+
     private circle(id: string, state: BodyState, ball: boolean, mass: number): void {
         const c = this.config; const radius = ball ? c.ballRadius : c.playerRadius;
         const node = new Node(id); node.active = false; this.root.addChild(node);
         node.setPosition(state.position.x * PHYSICS_2D_PTM_RATIO, state.position.y * PHYSICS_2D_PTM_RATIO);
         const body = node.addComponent(RigidBody2D);
         body.type = ERigidBody2DType.Dynamic; body.group = 1; body.bullet = true;
+        body.enabledContactListener = true;
         body.fixedRotation = !ball; body.gravityScale = 0;
         if (ball) body.angularDamping = c.ballAngularDamping;
         body.linearDamping = ball ? c.ballDamping : c.playerDamping;
@@ -64,11 +78,20 @@ export class CocosPhysics implements PhysicsPort {
         collider.radius = radius * PHYSICS_2D_PTM_RATIO;
         collider.density = mass / (Math.PI * radius * radius);
         collider.friction = c.friction; collider.restitution = ball ? c.ballRestitution : c.playerRestitution;
+        collider.on(Contact2DType.BEGIN_CONTACT, this.recordBallPlayerContact, this);
         collider.on(Contact2DType.POST_SOLVE, this.recordImpact, this);
-        node.active = true; this.bodies.set(id, body);
+        this.bodies.set(id, body); node.active = true;
     }
 
-    private recordImpact(contact: IPhysics2DContact): void {
+    private recordBallPlayerContact(selfCollider: Collider2D, otherCollider: Collider2D): void {
+        const selfId = selfCollider.node.name; const otherId = otherCollider.node.name;
+        const playerId = selfId === 'ball' ? otherId : otherId === 'ball' ? selfId : null;
+        if (playerId && playerId !== 'ball' && this.bodies.has(playerId)) this.ballPlayerContacts.add(playerId);
+    }
+
+    private recordImpact(_selfCollider: Collider2D, _otherCollider: Collider2D,
+        contact: IPhysics2DContact | null): void {
+        if (!contact) return;
         const impulse = contact.getImpulse();
         if (!impulse) return;
         for (const value of impulse.normalImpulses) {
@@ -84,7 +107,7 @@ export class CocosPhysics implements PhysicsPort {
     }
 
     restore(state: GameState): void {
-        this.strongestImpact = 0;
+        this.strongestImpact = 0; this.ballPlayerContacts.clear();
         for (const [id, data] of [...state.players.map(p => [p.instanceId, p] as const), ['ball', state.ball] as const]) {
             const body = this.bodies.get(id)!;
             body.node.setPosition(data.position.x * PHYSICS_2D_PTM_RATIO, data.position.y * PHYSICS_2D_PTM_RATIO);
@@ -131,13 +154,15 @@ export class CocosPhysics implements PhysicsPort {
         });
         const ball = read(this.bodies.get('ball')!);
         const goal = detectGoal({ ball }, this.config);
+        const ballPlayerContacts = [...this.ballPlayerContacts];
+        this.ballPlayerContacts.clear();
         return { players: [...this.bodies].filter(([id]) => id !== 'ball').map(([instanceId, body]) => ({ instanceId, ...read(body) })),
-            ball, goal: goal === 'blue' ? 'top' : goal === 'red' ? 'bottom' : null };
+            ball, ballPlayerContacts, goal: goal === 'blue' ? 'top' : goal === 'red' ? 'bottom' : null };
     }
     /** 仅供本地球面图案显示；角度尚未进入跨设备权威状态。 */
     getBallAngle(): number { return this.bodies.get('ball')!.node.angle; }
     stop(): void {
-        this.strongestImpact = 0;
+        this.strongestImpact = 0; this.ballPlayerContacts.clear();
         for (const body of this.bodies.values()) { body.linearVelocity = new Vec2(); body.angularVelocity = 0; }
     }
     dispose(): void {

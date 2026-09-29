@@ -19,5 +19,8 @@ export function validateCommand(
     if (!state.players.some(p => p.instanceId === input.playerId && p.ownerId === sessionOperatorId)) {
         return reject('WrongPlayer');
     }
+    if (state.skills.forcedPlayerId && state.skills.forcedPlayerId !== input.playerId) {
+        return reject('WrongPlayer');
+    }
     return { ok: true, command: input };
 }

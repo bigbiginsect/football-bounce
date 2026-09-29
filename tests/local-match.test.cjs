@@ -5,7 +5,7 @@ const { LocalMatch } = require('../.test-output/application/LocalMatch.js');
 // 夹具数值不代表首版人数、局时或先手决定。
 const body = () => ({ position: { x: 0, y: 0 }, velocity: { x: 0, y: 0 } });
 function fixture(overrides = {}) {
-  return { schemaVersion: 4, revision: 0, matchId: 'test-match', modeId: 'test', configVersion: 'fixture-1',
+  return { schemaVersion: 5, revision: 0, matchId: 'test-match', modeId: 'test', configVersion: 'fixture-1',
     catalogVersion: 'test-catalog',
     turnNumber: 1, phase: 'Aiming', activeOperatorId: 'a', clock: { matchDurationMs: 1000,
       elapsedMs: 0, remainingMs: 1000, turnDurationMs: 1000, turnRemainingMs: 1000 },
@@ -15,7 +15,9 @@ function fixture(overrides = {}) {
       { ...body(), instanceId: 'b1', templateId: 'test-player', ownerId: 'b' },
     ], ball: body(), kickoff: { players: [
       { instanceId: 'a1', position: { x: 0, y: 0 } }, { instanceId: 'b1', position: { x: 0, y: 0 } },
-    ], ballPosition: { x: 0, y: 0 }, pending: false }, result: null, ...overrides };
+    ], ballPosition: { x: 0, y: 0 }, pending: false },
+    skills: { launchCounts: {}, aimWobble: null, bonus: null, forcedPlayerId: null },
+    result: null, ...overrides };
 }
 function command(overrides = {}) {
   return { type: 'Launch', commandId: 'c1', matchId: 'test-match', turnNumber: 1,

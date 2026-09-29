@@ -4,7 +4,8 @@ const { LocalMatch } = require('../.test-output/application/LocalMatch.js');
 const { prototypeConfig, freezeConfig, createStandardMatchState, detectGoal } =
   require('../.test-output/core/PrototypeConfig.js');
 const { parsePlayerCatalog } = require('../.test-output/core/PlayerCatalog.js');
-const { createBoundaryWalls, isPlayablePosition } = require('../.test-output/core/BoundaryGeometry.js');
+const { createBoundaryWalls, createCornerBumpers, isPlayablePosition } =
+  require('../.test-output/core/BoundaryGeometry.js');
 
 const clone = value => structuredClone(value);
 const config = freezeConfig(prototypeConfig);
@@ -51,9 +52,10 @@ function fixedSteps(match, count, step = config.fixedStep) {
 
 test('标准模式创建 5v5，模式局时和瞄准时限来自配置，开局位置无重叠', () => {
   const state = createStandardMatchState('m', config, 42, catalog);
-  assert.equal(state.schemaVersion, 4);
+  assert.equal(state.schemaVersion, 5);
   assert.equal(state.catalogVersion, catalog.version);
   assert.equal(state.modeId, 'standard');
+  assert.equal(config.playerRadius, 0.30);
   assert.equal(state.players.filter(player => player.ownerId === 'blue').length, 5);
   assert.equal(state.players.filter(player => player.ownerId === 'red').length, 5);
   assert.equal(new Set(state.players.map(player => player.instanceId)).size, 10);
@@ -160,6 +162,19 @@ test('上下球门两侧墙体从门线向外延伸，门柱前侧保留圆球�
     const dx = Math.max(Math.abs(x - wall.x) - wall.width / 2, 0);
     const dy = Math.max(Math.abs(y - wall.y) - wall.height / 2, 0);
     assert.ok(Math.hypot(dx, dy) > config.ballRadius);
+  }
+});
+
+test('四角弹簧位于边界交点并使用可容纳球员的统一半径', () => {
+  const bumpers = createCornerBumpers(config);
+  assert.equal(bumpers.length, 4);
+  assert.deepEqual(new Set(bumpers.map(item => `${Math.sign(item.x)},${Math.sign(item.y)}`)),
+    new Set(['-1,-1', '-1,1', '1,-1', '1,1']));
+  for (const bumper of bumpers) {
+    assert.equal(Math.abs(bumper.x), config.fieldWidth / 2);
+    assert.equal(Math.abs(bumper.y), config.fieldHeight / 2);
+    assert.equal(bumper.radius, config.cornerBumperRadius);
+    assert.ok(bumper.radius > config.playerRadius);
   }
 });
 

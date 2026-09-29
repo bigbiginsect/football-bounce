@@ -3,7 +3,7 @@ import { Canvas, Camera, Color, Graphics, Label, Mask, Node, Sprite, SpriteFrame
 import type { Vector2Data } from '../core/GameState';
 import type { FormationId } from '../core/Lineup';
 import type { PlayerCatalog, PlayerTemplate } from '../core/PlayerCatalog';
-import { getPlayerTemplate } from '../core/PlayerCatalog';
+import { getPlayerTemplate, playerSkillPresentation } from '../core/PlayerCatalog';
 import type { WarehouseCommand, WarehouseSnapshot } from '../application/PlayerWarehouse';
 
 type CardAction = 'info' | 'deploy';
@@ -397,15 +397,17 @@ export class PlayerWarehouseView {
         const skillsGraphic = skills.getComponent(Graphics)!; skillsGraphic.strokeColor = new Color(147, 174, 156);
         skillsGraphic.lineWidth = 3; skillsGraphic.stroke();
         this.skillIcon(skills, -242, 0);
-        this.label(skills, template.skill ? `【${template.skill.id}】` : '【专属技能】', 28, 45, 25, 430,
+        const skill = playerSkillPresentation(template);
+        this.label(skills, skill ? `【${skill.name}】` : '【专属技能】', 28, 45, 25, 430,
             new Color(226, 83, 37));
-        const skillText = template.skill
-            ? '技能接口已配置，具体效果将在技能规则确定后启用。'
+        const skillText = skill
+            ? skill.description
             : '技能系统尚未启用，效果与解锁条件将在后续版本确定。';
         const placeholder = this.label(skills, skillText, 52, -2, 19, 420, new Color(44, 66, 78));
         placeholder.enableWrapText = true; placeholder.lineHeight = 27;
         placeholder.node.getComponent(UITransform)?.setContentSize(420, 64);
-        this.label(skills, '敬请期待', 218, -57, 17, 150, new Color(225, 47, 48));
+        this.label(skills, skill ? '已启用' : '敬请期待', 218, -57, 17, 150,
+            skill ? new Color(24, 146, 58) : new Color(225, 47, 48));
 
         this.pitchDecoration(card);
         this.panel(card, 'ActionShadow', 316, 72, 0, -507, new Color(13, 91, 38), 19);
@@ -659,11 +661,20 @@ export class PlayerWarehouseView {
     }
     private avatar(parent: Node, templateId: string, size: number, x: number, y: number): Node {
         const frame = this.portraits.get(templateId);
-        if (!frame) throw new Error(`缺少头像资源：${templateId}`);
+        const template = getPlayerTemplate(this.catalog, templateId);
         const avatar = this.node(parent, `Avatar-${templateId}`, size, size); avatar.setPosition(x, y);
-        const mask = avatar.addComponent(Mask); mask.type = Mask.Type.GRAPHICS_ELLIPSE; mask.segments = 32;
-        const image = this.node(avatar, 'Image', size, size);
-        const sprite = image.addComponent(Sprite); sprite.sizeMode = Sprite.SizeMode.CUSTOM; sprite.spriteFrame = frame;
+        if (frame) {
+            const mask = avatar.addComponent(Mask); mask.type = Mask.Type.GRAPHICS_ELLIPSE; mask.segments = 32;
+            const image = this.node(avatar, 'Image', size, size);
+            const sprite = image.addComponent(Sprite); sprite.sizeMode = Sprite.SizeMode.CUSTOM; sprite.spriteFrame = frame;
+        } else {
+            const art = avatar.addComponent(Graphics); art.fillColor = new Color(30, 105, 111);
+            art.circle(0, 0, size / 2); art.fill();
+            art.strokeColor = new Color(204, 242, 229); art.lineWidth = Math.max(2, size * 0.035);
+            art.circle(0, 0, size / 2 - 2); art.stroke();
+            this.label(avatar, template.name, 0, 0, template.name.length > 5 ? 18 : 22,
+                size - 10, new Color(246, 252, 244));
+        }
         return avatar;
     }
     private button(parent: Node, text: string, x: number, y: number, width: number, height: number,
