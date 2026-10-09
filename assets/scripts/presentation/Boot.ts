@@ -1,6 +1,6 @@
 import { _decorator, Component, EventTouch, input, Input, game, Game, view, ResolutionPolicy,
     Label, Node, UITransform, JsonAsset, SpriteFrame, assetManager, AssetManager, isValid,
-    AudioClip, AudioSource, tween, Vec3 } from 'cc';
+    AudioClip, AudioSource } from 'cc';
 import { LocalMatch } from '../application/LocalMatch';
 import { createStandardMatchState, freezeConfig, prototypeConfig, PrototypeConfig } from '../core/PrototypeConfig';
 import { LaunchGesture } from '../core/LaunchGesture';
@@ -11,8 +11,6 @@ import { LineupEditor, LineupEdit } from '../application/LineupEditor';
 import type { MatchLineups } from '../core/Lineup';
 import { LineupView } from './LineupView';
 import { MatchFeedbackTracker, MatchOverlay, overlayFor } from './MatchFeedback';
-import { PlayerWarehouse, WarehouseCommand } from '../application/PlayerWarehouse';
-import { PlayerWarehouseView } from './PlayerWarehouseView';
 
 const { ccclass } = _decorator;
 let sessionSequence = 0;
@@ -29,10 +27,6 @@ export class Boot extends Component {
     private screen?: PrototypeView;
     private lineupView?: LineupView;
     private lineupEditor?: LineupEditor;
-    private warehouse?: PlayerWarehouse;
-    private warehouseView?: PlayerWarehouseView;
-    private warehouseOpen = false;
-    private navigationAnimating = false;
     private lineups?: MatchLineups;
     private gesture?: LaunchGesture;
     private readonly feedbackTracker = new MatchFeedbackTracker();
@@ -87,7 +81,6 @@ export class Boot extends Component {
         try {
             this.physics?.dispose(); this.physics = undefined; this.screen?.dispose(); this.screen = undefined;
             this.lineupView?.dispose(); this.lineupView = undefined;
-            this.warehouseView?.dispose(); this.warehouseView = undefined;
             const node = new Node('StartupError'); node.layer = this.node.layer; this.node.addChild(node);
             node.addComponent(UITransform).setContentSize(650, 300);
             const label = node.addComponent(Label); label.fontSize = 24;
@@ -101,16 +94,10 @@ export class Boot extends Component {
         this.screen?.dispose(); this.screen = undefined; this.match = undefined;
         this.audioSource?.stop(); this.feedbackTracker.reset();
         this.feedbackOverlay = null; this.feedbackSeconds = 0; this.collisionCooldown = 0;
-        this.warehouseView?.dispose(); this.warehouseView = undefined;
-        this.warehouse = undefined; this.warehouseOpen = false; this.navigationAnimating = false;
         this.lineupView?.dispose();
         this.lineupEditor = new LineupEditor(this.catalog, this.config, this.lineups);
-        this.warehouse = new PlayerWarehouse(this.catalog, this.lineupEditor);
         this.lineupView = new LineupView(this.node, this.catalog, this.portraitFrames,
-            edit => this.submitLineup(edit), {
-                previewWarehouse: progress => this.previewWarehouse(progress),
-                finishWarehouse: complete => this.animateWarehouse(complete),
-            });
+            edit => this.submitLineup(edit));
         this.lineupView.setDraft(this.lineupEditor.getSnapshot());
         this.message = '';
     }
@@ -118,60 +105,15 @@ export class Boot extends Component {
         if (!this.lineupEditor?.execute(edit)) return;
         const snapshot = this.lineupEditor.getSnapshot();
         if (!snapshot.ready) {
-            this.lineupView?.setDraft(snapshot); this.warehouseView?.setSnapshot(this.warehouse!.getSnapshot());
+            this.lineupView?.setDraft(snapshot);
             return;
         }
         this.lineups = this.lineupEditor.toMatchLineups();
         this.lineupView?.dispose(); this.lineupView = undefined; this.lineupEditor = undefined;
-        this.warehouseView?.dispose(); this.warehouseView = undefined; this.warehouse = undefined;
-        this.warehouseOpen = false; this.navigationAnimating = false;
         this.screen = new PrototypeView(this.node, this.config, () => {
             if (!this.gesture?.preview()) this.reset();
         }, () => this.openLineup(), this.catalog, this.portraitFrames);
         this.reset();
-    }
-    private submitWarehouse(command: WarehouseCommand): void {
-        if (!this.warehouse?.execute(command)) return;
-        this.warehouseView?.setSnapshot(this.warehouse.getSnapshot());
-        this.lineupView?.setDraft(this.lineupEditor!.getSnapshot());
-    }
-    private ensureWarehouseView(): PlayerWarehouseView | undefined {
-        if (!this.lineupView || !this.warehouse) return undefined;
-        if (!this.warehouseView) {
-            this.warehouseView = new PlayerWarehouseView(this.node, this.catalog, this.portraitFrames,
-                command => this.submitWarehouse(command), {
-                    previewBack: progress => this.previewWarehouseBack(progress),
-                    finishBack: complete => this.animateWarehouse(!complete),
-                });
-            this.warehouseView.setSnapshot(this.warehouse.getSnapshot());
-        }
-        return this.warehouseView;
-    }
-    private previewWarehouse(progress: number): void {
-        if (this.navigationAnimating || this.warehouseOpen || !this.lineupView) return;
-        const warehouse = this.ensureWarehouseView(); if (!warehouse) return;
-        this.lineupView.root.setPosition(progress * 720, 0);
-        warehouse.root.setPosition(-720 + progress * 720, 0);
-    }
-    private previewWarehouseBack(progress: number): void {
-        if (this.navigationAnimating || !this.warehouseOpen || !this.lineupView || !this.warehouseView) return;
-        this.lineupView.root.setPosition(720 - progress * 720, 0);
-        this.warehouseView.root.setPosition(-progress * 720, 0);
-    }
-    private animateWarehouse(open: boolean): void {
-        if (this.navigationAnimating || !this.lineupView) return;
-        const warehouse = this.ensureWarehouseView(); if (!warehouse) return;
-        this.navigationAnimating = true;
-        const targetLineupX = open ? 720 : 0; const targetWarehouseX = open ? 0 : -720;
-        const distance = Math.abs(warehouse.root.position.x - targetWarehouseX) / 720;
-        const duration = Math.max(0.08, 0.2 * distance);
-        tween(this.lineupView.root).to(duration, { position: new Vec3(targetLineupX, 0, 0) },
-            { easing: 'quadOut' }).start();
-        tween(warehouse.root).to(duration, { position: new Vec3(targetWarehouseX, 0, 0) },
-            { easing: 'quadOut' }).call(() => {
-                this.navigationAnimating = false; this.warehouseOpen = open;
-                if (!open) { this.warehouseView?.dispose(); this.warehouseView = undefined; }
-            }).start();
     }
     private reset(): void {
         this.gesture?.cancel(); this.physics?.dispose(); this.physics = undefined;
@@ -190,11 +132,6 @@ export class Boot extends Component {
     private readonly beginTouch = (event: EventTouch): void => {
         const id = event.getID(); if (id === null) return;
         if (this.background || !this.enabledInHierarchy) return;
-        if (this.navigationAnimating) return;
-        if (this.warehouseView && this.warehouseOpen) {
-            if (this.paused) this.resume();
-            this.warehouseView.touchStart(id, event.getLocation()); return;
-        }
         if (this.lineupView) {
             if (this.paused) this.resume();
             this.lineupView.touchStart(id, event.getLocation()); return;
@@ -212,19 +149,11 @@ export class Boot extends Component {
     };
     private readonly moveTouch = (event: EventTouch): void => {
         const id = event.getID(); if (id === null) return;
-        if (this.navigationAnimating) return;
-        if (this.warehouseView && this.warehouseOpen) {
-            this.warehouseView.touchMove(id, event.getLocation()); return;
-        }
         if (this.lineupView) { this.lineupView.touchMove(id, event.getLocation()); return; }
         if (this.screen) this.gesture?.move(id, this.screen.toField(event.getLocation()));
     };
     private readonly endTouch = (event: EventTouch): void => {
         const id = event.getID(); if (id === null) return;
-        if (this.navigationAnimating) return;
-        if (this.warehouseView && this.warehouseOpen) {
-            this.warehouseView.touchEnd(id, event.getLocation()); return;
-        }
         if (this.lineupView) { this.lineupView.touchEnd(id, event.getLocation()); return; }
         if (this.paused || !this.screen || !this.match) return;
         const launch = this.gesture?.end(id, this.screen.toField(event.getLocation()));
@@ -240,11 +169,9 @@ export class Boot extends Component {
     private readonly cancelTouch = (event: EventTouch): void => {
         const id = event.getID(); if (id !== null) this.gesture?.cancel(id);
         if (id !== null) this.lineupView?.touchCancel(id);
-        if (id !== null) this.warehouseView?.touchCancel(id);
     };
     private readonly pause = (): void => {
         this.paused = true; this.gesture?.cancel(); this.lineupView?.touchCancel();
-        this.warehouseView?.touchCancel();
         this.audioSource?.stop();
         this.match?.discardAccumulatedTime();
         this.draw();
@@ -280,6 +207,7 @@ export class Boot extends Component {
     }
     update(deltaSeconds: number): void {
         if (this.paused) return;
+        if (this.lineupView) { this.lineupView.update(deltaSeconds); return; }
         this.feedbackSeconds = Math.max(0, this.feedbackSeconds - deltaSeconds);
         if (this.feedbackSeconds <= 0) this.feedbackOverlay = null;
         this.collisionCooldown = Math.max(0, this.collisionCooldown - deltaSeconds);
@@ -352,6 +280,5 @@ export class Boot extends Component {
     }
     onDestroy(): void {
         this.audioSource?.stop(); this.physics?.dispose(); this.screen?.dispose(); this.lineupView?.dispose();
-        this.warehouseView?.dispose();
     }
 }

@@ -58,7 +58,7 @@ Android 首次试打包作为支线，在本地完整对局可玩后、其他机
 
 ## 阶段 3：球员资产与基本体验
 
-**状态：进行中（2026-09-29 已完成 16 人目录、姓名占位、重量碰撞差异、立体皮球、四角弹簧，以及 C 罗/内马尔首批技能；交互手感待试玩）。** [球员与阵容需求](worklogs/2026-09-23-stage3-player-assets/requirement-gap.md) · [比赛反馈需求](worklogs/2026-09-24-stage3-match-feedback/requirement-gap.md) · [球员仓库需求](worklogs/2026-09-24-player-warehouse/requirement-gap.md) · [层叠仓库与阵型需求](worklogs/2026-09-28-layered-warehouse-formations/requirement-gap.md) · [开球与瞄准调整](worklogs/2026-09-28-kickoff-aim-formation-focus/requirement-gap.md) · [球员、重量碰撞与角落弹簧](worklogs/2026-09-29-player-weight-ball-corner-springs/requirement-gap.md) · [比赛圆片尺寸与首批技能](worklogs/2026-09-29-player-skills-token-size/requirement-gap.md) · [资产录入流程](docs/player-assets.md)。现有 16 人目录、五项属性、赛前拖动选人、三个阵型预设、可聚焦至 3/4 的层叠仓库、信息卡、按钮上场、开球违例、力量/精度视觉差异、重量动量碰撞、四角满弹性缓冲、立体旋转皮球、C 罗概率瞄准干扰、内马尔命中追加行动、比赛 HUD、事件覆盖层、终局面板和五类原型音效；完整交互与音画手感仍待用户逐项试玩，阶段 3 的多尺寸验收及属性平衡继续推进。
+**状态：进行中（2026-10-09 统一连续滚动选人与候补仓库已获用户试玩确认，长按按反馈缩短至 0.2 秒；2026-09-29 已完成 16 人目录、姓名占位、重量碰撞差异、立体皮球、四角弹簧，以及 C 罗/内马尔首批技能；交互手感待试玩）。** [球员与阵容需求](worklogs/2026-09-23-stage3-player-assets/requirement-gap.md) · [比赛反馈需求](worklogs/2026-09-24-stage3-match-feedback/requirement-gap.md) · [球员仓库需求](worklogs/2026-09-24-player-warehouse/requirement-gap.md) · [层叠仓库与阵型需求](worklogs/2026-09-28-layered-warehouse-formations/requirement-gap.md) · [开球与瞄准调整](worklogs/2026-09-28-kickoff-aim-formation-focus/requirement-gap.md) · [球员、重量碰撞与角落弹簧](worklogs/2026-09-29-player-weight-ball-corner-springs/requirement-gap.md) · [比赛圆片尺寸与首批技能](worklogs/2026-09-29-player-skills-token-size/requirement-gap.md) · [连续滚动选人需求](worklogs/2026-10-09-unified-lineup-scroll/requirement-gap.md) · [资产录入流程](docs/player-assets.md)。现有 16 人目录、五项属性、赛前拖动选人、三个阵型预设、连续滚动的阵容与候补仓库、信息卡、长按拖动换人、开球违例、力量/精度视觉差异、重量动量碰撞、四角满弹性缓冲、立体旋转皮球、C 罗概率瞄准干扰、内马尔命中追加行动、比赛 HUD、事件覆盖层、终局面板和五类原型音效；完整交互与音画手感仍待用户逐项试玩，阶段 3 的多尺寸验收及属性平衡继续推进。
 
 **目标：球员有可感知的差异，游戏流程容易理解。**
 
@@ -113,7 +113,7 @@ Android 首次试打包作为支线，在本地完整对局可玩后、其他机
 
 ## 推进方式
 
-- 当前主线为**阶段 3 球员资产与基本体验**；16 人目录（十人姓名占位）、阵容接口、赛前拖动、三种阵型、1/3→3/4 阵型聚焦、层叠仓库抽屉、信息卡、开球违例、立体瞄准线、重量动量碰撞、立体旋转皮球、四角满弹性缓冲、C 罗/内马尔首批技能、比赛反馈和原型音效已接入。下一步先试玩球员尺寸、C 罗摆动幅度和内马尔第三次命中追加行动，再连同轻撞重/重撞轻、四角反弹、姓名可读性、皮球旋转和平动辨识复验，并继续多尺寸与属性平衡。Android 首次验证支线已满足“阶段 2 完成”的启动条件，但仍取决于其他机器的工具链和真机可用性。
+- 当前主线为**阶段 3 球员资产与基本体验**；16 人目录（十人姓名占位）、阵容接口、赛前拖动、三种阵型、统一连续滚动选人页、长按拖动与边缘自动滚动、信息卡、开球违例、立体瞄准线、重量动量碰撞、立体旋转皮球、四角满弹性缓冲、C 罗/内马尔首批技能、比赛反馈和原型音效已接入。下一步先试玩球员尺寸、C 罗摆动幅度和内马尔第三次命中追加行动，再连同轻撞重/重撞轻、四角反弹、姓名可读性、皮球旋转和平动辨识复验，并继续多尺寸与属性平衡。Android 首次验证支线已满足“阶段 2 完成”的启动条件，但仍取决于其他机器的工具链和真机可用性。
 - 每阶段拆成可独立验收的需求；中等规模以上需求按 `AGENTS.md` 在 `worklogs/` 中建立 `requirement-gap.md`，实现后追加 `b1.md、b2.md……`，不提前创建空日志或示例。
 - 每次只推进能验证的一小段闭环。上一阶段存在阻塞性问题时，优先修复；独立的美术、配置或其他机器打包准备可交错开展。
 - 阶段完成后在本文件注明完成状态及实际验收记录链接；需求变化影响后续阶段时同步调整路线图。当前阶段 0—2 已完成；阶段 3 进行中，阶段 4—5 与 Android 支线尚未开始。
