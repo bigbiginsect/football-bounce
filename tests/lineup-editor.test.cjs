@@ -12,7 +12,7 @@ const config = freezeConfig(prototypeConfig);
 test('候补替换后原球员回仓，且两队选择互不影响', () => {
   const editor = new LineupEditor(catalog, config);
   const before = editor.getSnapshot();
-  assert.equal(before.bench[0], 'haaland');
+  assert.ok(before.bench.includes('haaland'));
   assert.equal(before.bench.length, catalog.players.length - 5);
   assert.equal(editor.execute({ type: 'ReplaceFromBench', templateId: 'haaland', slot: 0 }), true);
   const after = editor.getSnapshot();

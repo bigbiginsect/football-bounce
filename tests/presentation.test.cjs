@@ -135,19 +135,19 @@ function warehouseGestureFixture() {
   view.drawerHint = { string: '' }; view.viewport = { position: { x: 0, y: 0 } };
   view.compactFormation = { active: true }; view.focusedFormation = { active: false };
   view.snapshot = { slotPositions: [{ x: -1.6, y: -3.8 }, { x: 1.6, y: -3.8 }, { x: 0, y: -3 },
-    { x: -1.25, y: -2 }, { x: 1.25, y: -2 }] };
+    { x: -1.25, y: -2 }, { x: 1.25, y: -2 }], active: [] };
   view.formationButtons = [{ id: '2-2-1', node: { position: { x: 0, y: 472 } } }];
   view.activeCards = [{ slot: 2, node: { position: { x: 0, y: 312 },
     setPosition(x, y) { this.position = { x, y }; } } }];
-  view.playerCards = [{ id: 'haaland', node: { position: { x: -158, y: 350 },
+  view.playerCards = [{ id: 'haaland', node: { position: { x: -240, y: 350 },
     setPosition(x, y) { this.position = { x, y }; } } }];
   view.maxScroll = () => 220; view.placeCards = PlayerWarehouseView.prototype.placeCards.bind(view);
   view.snapDrawer = expanded => { view.snapped = expanded; view.setDrawerProgress(expanded ? 1 : 0); };
   return { view, commands, back };
 }
-test('仓库阵型、槽位、信息和上场按钮产生明确意图', () => {
+test('仓库阵型、槽位和四列球员卡产生明确意图，详情中上场', () => {
   const { view, commands } = warehouseGestureFixture(); let info;
-  view.showInfo = id => { info = id; };
+  view.showInfo = id => { info = id; view.infoTemplateId = id; view.infoPanel = { destroy() {} }; };
   view.touchStart(1, { x: 0, y: 472 }); view.touchEnd(1, { x: 0, y: 472 });
   assert.equal(view.formationFocused, true); assert.equal(view.compactFormation.active, false);
   assert.equal(view.focusedFormation.active, true); assert.equal(view.drawer.position.y, -890);
@@ -156,12 +156,13 @@ test('仓库阵型、槽位、信息和上场按钮产生明确意图', () => {
   assert.deepEqual(JSON.parse(JSON.stringify(commands)), [
     { type: 'SelectFormation', formationId: '2-2-1' }, { type: 'SelectSlot', slot: 2 },
   ]);
-  // 阵型聚焦态第一张卡按钮的根坐标分别为 (-230, -608) 与 (-86, -608)。
-  view.touchStart(3, { x: -230, y: -608 }); view.touchEnd(3, { x: -230, y: -608 });
+  // 聚焦抽屉中第一张卡的根坐标为 (-240, -540)。
+  view.touchStart(3, { x: -240, y: -540 }); view.touchEnd(3, { x: -240, y: -540 });
   assert.equal(info, 'haaland');
-  view.touchStart(4, { x: -86, y: -608 }); view.touchEnd(4, { x: -86, y: -608 });
+  view.touchStart(4, { x: 153, y: -500 }); view.touchEnd(4, { x: 153, y: -500 });
   assert.deepEqual(JSON.parse(JSON.stringify(commands.at(-1))),
     { type: 'DeployPlayer', templateId: 'haaland' });
+  assert.equal(view.infoPanel, undefined);
 });
 test('仓库顶部或右边缘左滑和返回按钮关闭页面，纵向拖动只滚动列表', () => {
   const { view, commands, back } = warehouseGestureFixture();
@@ -173,8 +174,8 @@ test('仓库顶部或右边缘左滑和返回按钮关闭页面，纵向拖动�
   view.touchStart(4, { x: 340, y: 0 }); view.touchMove(4, { x: 160, y: -2 });
   view.touchEnd(4, { x: 160, y: -2 });
   assert.deepEqual(back, [true, true, true]);
-  view.playerCards = Array.from({ length: 8 }, (_, index) => ({ id: `p${index}`,
-    node: { position: { x: index % 2 ? 158 : -158, y: 350 - Math.floor(index / 2) * 220 },
+  view.playerCards = Array.from({ length: 20 }, (_, index) => ({ id: `p${index}`,
+    node: { position: { x: (index % 4 - 1.5) * 160, y: 350 - Math.floor(index / 4) * 158 },
       setPosition(x, y) { this.position = { x, y }; } } }));
   view.touchStart(3, { x: 0, y: -100 }); view.touchMove(3, { x: 0, y: 50 });
   view.touchEnd(3, { x: 0, y: 50 });
@@ -205,19 +206,36 @@ test('点击阵型后仓库停靠到下方约四分之一，仍可上拉全屏�
   assert.equal(view.drawerProgress, 0); assert.equal(view.drawerTop(), -300);
   assert.deepEqual(JSON.parse(JSON.stringify(commands)), [{ type: 'SelectFormation', formationId: '2-2-1' }]);
 });
-test('球员信息页的顶部关闭键和底部返回按钮都只产生关闭意图', () => {
+test('球员信息页的顶部关闭键和底部返回按钮只产生关闭意图，已上场球员不可重复上场', () => {
   const { view, commands, back } = warehouseGestureFixture(); let closed = 0;
   view.closeInfo = () => { closed++; view.infoPanel = undefined; };
   view.infoPanel = {};
   view.touchStart(1, { x: 296, y: 535 }); view.touchEnd(1, { x: 296, y: 535 });
   assert.equal(closed, 1);
   view.infoPanel = {};
-  view.touchStart(2, { x: 0, y: -500 }); view.touchEnd(2, { x: 0, y: -500 });
+  view.touchStart(2, { x: -153, y: -500 }); view.touchEnd(2, { x: -153, y: -500 });
   assert.equal(closed, 2);
+  view.infoPanel = {};
+  view.infoTemplateId = 'haaland'; view.snapshot.active = ['haaland'];
+  view.touchStart(4, { x: 153, y: -500 }); view.touchEnd(4, { x: 153, y: -500 });
+  assert.equal(commands.length, 0);
   view.infoPanel = {};
   view.touchStart(3, { x: 0, y: 0 }); view.touchEnd(3, { x: 0, y: 0 });
   assert.equal(closed, 2);
   assert.equal(commands.length, 0); assert.equal(back.length, 0);
+});
+test('仓库四列五行可达，聚焦抽屉滚动能露出最后一行', () => {
+  const { view } = warehouseGestureFixture();
+  delete view.maxScroll;
+  view.playerCards = Array.from({ length: 20 }, (_, index) => ({ id: `p${index}`,
+    node: { position: { x: 0, y: 0 }, setPosition(x, y) { this.position = { x, y }; } } }));
+  view.placeCards();
+  assert.deepEqual(view.playerCards.slice(0, 4).map(item => item.node.position.x), [-240, -80, 80, 240]);
+  assert.equal(view.playerCards[19].node.position.y, 350 - 4 * 158);
+  view.drawer.position.y = -890;
+  view.scrollOffset = view.maxScroll(); view.placeCards();
+  const last = view.playerCards[19].node.position;
+  assert.ok(view.drawer.position.y + last.y - 73 >= -640);
 });
 test('球员信息页综合分只读派生自现有五项评分', () => {
   const view = Object.create(PlayerWarehouseView.prototype);
@@ -535,6 +553,8 @@ test('圆形头像节点按实例缓存，无头像球员改用姓名徽章', ()
   assert.equal(screen.portraitLayer.children.length, 10);
   const changed = { ...state, players: state.players.map((player, index) =>
     index === 0 ? { ...player, templateId: 'neymar' } : player) };
+  // 临时缺图时仍应有姓名占位；正式目录中的内马尔已有头像。
+  screen.portraitFrames.delete('neymar');
   screen.setPlayers(changed);
   assert.equal(first.destroyed, true);
   assert.equal(screen.portraitNodes.get('blue-1').templateId, 'neymar');
@@ -586,6 +606,8 @@ test('物理发射读取当前球员专属冲量', () => {
   cc.Vec2 = class { constructor(x, y) { this.x = x; this.y = y; } };
   physics.launch({ playerId: 'blue-1', power: 1, direction: { x: 1, y: 0 } });
   physics.launch({ playerId: 'blue-2', power: 1, direction: { x: 1, y: 0 } });
+  physics.launch({ playerId: 'blue-1', power: 1, direction: { x: 1, y: 0 } }, 1.15);
   assert.ok(calls[1].x > calls[0].x);
+  assert.ok(Math.abs(calls[2].x - calls[0].x * 1.15) < 1e-12);
   assert.equal(calls[0].y, 0);
 });

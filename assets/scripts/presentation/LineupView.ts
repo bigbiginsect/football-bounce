@@ -2,7 +2,7 @@ import { Canvas, Camera, Color, Graphics, Label, Mask, Node, Sprite, SpriteFrame
     UITransform, Vec3, isValid } from 'cc';
 import type { Vector2Data } from '../core/GameState';
 import type { PlayerCatalog } from '../core/PlayerCatalog';
-import { getPlayerTemplate } from '../core/PlayerCatalog';
+import { getPlayerTemplate, playerRarityPresentation } from '../core/PlayerCatalog';
 import { formationPositions } from '../core/Lineup';
 import type { LineupDraftSnapshot, LineupEdit } from '../application/LineupEditor';
 
@@ -248,8 +248,9 @@ export class LineupView {
         const g = card.addComponent(Graphics);
         g.fillColor = field ? new Color(11, 42, 54, 235) : new Color(31, 67, 82);
         g.roundRect(-width / 2, -height / 2, width, height, 18); g.fill();
-        g.strokeColor = field ? new Color(194, 236, 229, 180) : new Color(92, 168, 184);
-        g.lineWidth = 2; g.stroke();
+        const [r, green, b] = playerRarityPresentation(template.rarity).rgb;
+        g.strokeColor = new Color(r, green, b);
+        g.lineWidth = 4; g.stroke();
         const size = field ? 74 : 76;
         const avatar = this.node(card, 'Avatar', size, size); avatar.setPosition(0, field ? 15 : 30);
         if (frame) {
@@ -264,8 +265,8 @@ export class LineupView {
             this.label(avatar, template.name, 0, 0, template.name.length > 4 ? 13 : 16, size - 8);
         }
         this.label(card, template.name, 0, field ? -38 : -19, field ? 19 : 22, width - 8);
-        if (!field) this.label(card, `重${template.weight}  力${template.power}  准${template.precision}`,
-            0, -53, 18, width - 4);
+        if (!field) this.label(card, `${playerRarityPresentation(template.rarity).name}  重${template.weight}  力${template.power}  准${template.precision}`,
+            0, -53, 16, width - 4);
         return card;
     }
     private button(x: number, y: number, width: number, name: string, color: Color): Node {

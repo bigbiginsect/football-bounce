@@ -12,7 +12,8 @@ export interface PhysicsFrame {
 /** 单位米、米/秒；引擎对象不能越过此边界。 */
 export interface PhysicsPort {
     restore(state: GameState): void;
-    launch(command: Command): void;
+    /** multiplier 由权威技能规则计算，不属于客户端 Command。 */
+    launch(command: Command, impulseMultiplier?: number): void;
     step(seconds: number): void;
     sample(): PhysicsFrame;
     stop(): void;

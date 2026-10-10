@@ -3,7 +3,7 @@ import { Canvas, Camera, Color, Graphics, Label, Mask, Node, Sprite, SpriteFrame
 import type { Vector2Data } from '../core/GameState';
 import type { FormationId } from '../core/Lineup';
 import type { PlayerCatalog, PlayerTemplate } from '../core/PlayerCatalog';
-import { getPlayerTemplate, playerSkillPresentation } from '../core/PlayerCatalog';
+import { getPlayerTemplate, playerRarityPresentation, playerSkillPresentation } from '../core/PlayerCatalog';
 import type { WarehouseCommand, WarehouseSnapshot } from '../application/PlayerWarehouse';
 
 type CardAction = 'info' | 'deploy';
@@ -32,9 +32,17 @@ const expandedDrawerTop = 548;
 const viewportY = 0;
 const viewportHeight = 920;
 const listStartY = 350;
-const rowStep = 220;
+const rowStep = 158;
+const cardWidth = 150;
+const cardHeight = 146;
 const infoCloseCenter = { x: 296, y: 535 } as const;
-const infoFooterCenter = { x: 0, y: -500 } as const;
+const infoBackCenter = { x: -153, y: -500 } as const;
+const infoDeployCenter = { x: 153, y: -500 } as const;
+
+function rarityColor(template: PlayerTemplate): Color {
+    const [r, g, b] = playerRarityPresentation(template.rarity).rgb;
+    return new Color(r, g, b);
+}
 
 /** 层叠式阵型/仓库表现层；所有阵型和上阵修改经 PlayerWarehouse/LineupEditor 执行。 */
 export class PlayerWarehouseView {
@@ -59,6 +67,7 @@ export class PlayerWarehouseView {
     private formationFocused = false;
     private touch?: Touch;
     private infoPanel?: Node;
+    private infoTemplateId?: string;
 
     constructor(parent: Node, private readonly catalog: PlayerCatalog,
         private readonly portraits: ReadonlyMap<string, SpriteFrame>,
@@ -84,13 +93,13 @@ export class PlayerWarehouseView {
         this.label(this.formationLayer, '选择阵型', -267, 505, 20, 120, new Color(213, 239, 224));
 
         this.drawer = this.panel(this.root, 'WarehouseDrawer', 692, drawerHeight, 0,
-            collapsedDrawerTop - drawerHeight / 2, new Color(226, 239, 229), 28);
+            collapsedDrawerTop - drawerHeight / 2, new Color(18, 29, 43), 28);
         const drawerBorder = this.drawer.getComponent(Graphics)!;
-        drawerBorder.strokeColor = new Color(56, 128, 112); drawerBorder.lineWidth = 4; drawerBorder.stroke();
-        this.panel(this.drawer, 'DrawerHandle', 116, 12, 0, 568, new Color(78, 127, 119), 6);
-        this.label(this.drawer, '球员仓库', -206, 526, 28, 240, new Color(28, 70, 68));
-        this.drawerHint = this.label(this.drawer, '上拉展开全屏', 204, 526, 17, 220, new Color(78, 116, 106));
-        this.label(this.drawer, '点击上场球员可选择替换槽位', 0, 486, 16, 600, new Color(99, 128, 118));
+        drawerBorder.strokeColor = new Color(91, 111, 132); drawerBorder.lineWidth = 3; drawerBorder.stroke();
+        this.panel(this.drawer, 'DrawerHandle', 96, 7, 0, 568, new Color(132, 149, 169), 4);
+        this.label(this.drawer, '球员仓库', -206, 526, 28, 240, new Color(239, 244, 248));
+        this.drawerHint = this.label(this.drawer, '上拉展开全屏', 204, 526, 17, 220, new Color(155, 174, 193));
+        this.panel(this.drawer, 'Divider', 630, 2, 0, 486, new Color(64, 82, 104), 0);
 
         this.viewport = this.node(this.drawer, 'WarehouseViewport', 660, viewportHeight);
         this.viewport.setPosition(0, viewportY);
@@ -129,8 +138,8 @@ export class PlayerWarehouseView {
         });
         snapshot.players.forEach((templateId, index) => {
             const card = this.playerCard(templateId, snapshot.active.indexOf(templateId) >= 0);
-            const column = index % 2; const row = Math.floor(index / 2);
-            card.setPosition(column === 0 ? -158 : 158, listStartY - row * rowStep + this.scrollOffset);
+            const column = index % 4; const row = Math.floor(index / 4);
+            card.setPosition((column - 1.5) * 160, listStartY - row * rowStep + this.scrollOffset);
             this.playerCards.push({ id: templateId, node: card });
         });
         this.scrollOffset = Math.min(this.scrollOffset, this.maxScroll());
@@ -142,7 +151,7 @@ export class PlayerWarehouseView {
         const point = this.local(screenPoint);
         if (this.infoPanel) {
             this.touch = { id, start: point, last: point, mode: 'modal',
-                action: this.hitInfoClose(point) ? 'close' : undefined };
+                action: this.hitInfoAction(point) };
             return true;
         }
         if (point.x >= -344 && point.x <= -228 && point.y >= 560 && point.y <= 624) {
@@ -225,6 +234,11 @@ export class PlayerWarehouseView {
         if (touch.mode === 'back') { this.navigation.finishBack(true); return; }
         if (touch.mode === 'modal') {
             if (touch.action === 'close') this.closeInfo();
+            if (touch.action === 'deploy' && this.infoTemplateId) {
+                const templateId = this.infoTemplateId;
+                this.closeInfo();
+                this.submit({ type: 'DeployPlayer', templateId });
+            }
             return;
         }
         if (touch.mode === 'formation' && touch.formationId) {
@@ -236,9 +250,6 @@ export class PlayerWarehouseView {
         }
         if (touch.mode === 'action' && touch.templateId && touch.action === 'info') {
             this.showInfo(touch.templateId); return;
-        }
-        if (touch.mode === 'action' && touch.templateId && touch.action === 'deploy') {
-            this.submit({ type: 'DeployPlayer', templateId: touch.templateId });
         }
     }
 
@@ -256,7 +267,7 @@ export class PlayerWarehouseView {
         const card = this.panel(this.formationLayer, `Active-${templateId}`, 94, 102, 0, 0,
             selected ? new Color(42, 125, 105) : new Color(25, 72, 77), 16);
         const g = card.getComponent(Graphics)!; g.strokeColor = selected
-            ? new Color(255, 221, 103) : new Color(104, 166, 163); g.lineWidth = selected ? 5 : 2; g.stroke();
+            ? new Color(255, 221, 103) : rarityColor(template); g.lineWidth = selected ? 5 : 3; g.stroke();
         this.avatar(card, templateId, 52, 0, 20);
         this.label(card, template.name, 0, -19, 14, 90);
         if (selected) this.label(card, `槽 ${slot + 1}`, 0, -40, 11, 84, new Color(255, 231, 132));
@@ -321,23 +332,22 @@ export class PlayerWarehouseView {
 
     private playerCard(templateId: string, active: boolean): Node {
         const template = getPlayerTemplate(this.catalog, templateId);
-        const card = this.panel(this.content, `Player-${templateId}`, 302, 202, 0, 0,
-            new Color(225, 239, 225), 20);
-        const border = card.getComponent(Graphics)!; border.strokeColor = new Color(75, 143, 135);
-        border.lineWidth = 3; border.stroke();
-        this.avatar(card, templateId, 84, -92, 42);
-        this.label(card, template.name, 48, 68, 25, 170, new Color(26, 70, 69));
-        this.label(card, `重 ${template.weight}　力 ${template.power}`, 48, 33, 17, 180, new Color(63, 96, 88));
-        this.label(card, `准 ${template.precision}　心 ${template.mentality}　弧 ${template.curve}`,
-            48, 6, 16, 190, new Color(63, 96, 88));
-        this.button(card, '信息', -72, -68, 132, 48, new Color(70, 127, 132));
-        this.button(card, active ? '已上场' : '上场', 72, -68, 132, 48,
-            active ? new Color(125, 151, 142) : new Color(47, 171, 105));
+        const card = this.panel(this.content, `Player-${templateId}`, cardWidth, cardHeight, 0, 0,
+            new Color(29, 42, 59), 18);
+        const border = card.getComponent(Graphics)!; border.strokeColor = rarityColor(template);
+        border.lineWidth = active ? 4 : 2.5; border.stroke();
+        this.panel(card, 'TierAccent', 72, 4, 0, 68, rarityColor(template), 2);
+        this.avatar(card, templateId, 86, 0, 13);
+        const name = this.label(card, template.name, 0, -49, 18, 136, new Color(240, 244, 248));
+        name.overflow = Label.Overflow.SHRINK;
+        if (active) this.circle(card, 'ActiveMarker', 14, 55, 55,
+            new Color(244, 226, 163), new Color(23, 38, 52), 2);
         return card;
     }
 
     private showInfo(templateId: string): void {
         const template = getPlayerTemplate(this.catalog, templateId);
+        this.infoTemplateId = templateId;
         const overall = this.overall(template);
         const overlay = this.node(this.root, `Info-${templateId}`, 720, 1280); overlay.setSiblingIndex(this.root.children.length - 1);
         const shade = overlay.addComponent(Graphics); shade.fillColor = new Color(3, 15, 20, 220);
@@ -345,7 +355,7 @@ export class PlayerWarehouseView {
 
         this.panel(overlay, 'InfoShadow', 680, 1170, 0, -9, new Color(4, 23, 29, 230), 34);
         const card = this.panel(overlay, 'InfoCard', 672, 1170, 0, 0, new Color(235, 244, 235), 32);
-        const frame = card.getComponent(Graphics)!; frame.strokeColor = new Color(58, 130, 124);
+        const frame = card.getComponent(Graphics)!; frame.strokeColor = rarityColor(template);
         frame.lineWidth = 7; frame.stroke();
 
         const header = this.panel(card, 'Header', 666, 90, 0, 535, new Color(44, 75, 88), 29);
@@ -361,18 +371,19 @@ export class PlayerWarehouseView {
 
         this.portraitMedallion(card, templateId, -226, 376);
         const portraitTag = this.panel(card, 'PortraitTag', 132, 42, -226, 280,
-            new Color(28, 186, 69), 18);
-        const tagBorder = portraitTag.getComponent(Graphics)!; tagBorder.strokeColor = new Color(16, 111, 45);
+            rarityColor(template), 18);
+        const tagBorder = portraitTag.getComponent(Graphics)!; tagBorder.strokeColor = new Color(38, 48, 64);
         tagBorder.lineWidth = 3; tagBorder.stroke();
-        this.label(portraitTag, '球员卡', 0, 0, 19, 118);
+        this.label(portraitTag, playerRarityPresentation(template.rarity).name, 0, 0, 19, 126);
 
         this.panel(card, 'IdentityShadow', 402, 130, 102, 388,
             new Color(182, 90, 39, 140), 18);
         const identity = this.panel(card, 'Identity', 402, 130, 102, 397,
-            new Color(247, 126, 54), 18);
+            rarityColor(template), 18);
         const identityBorder = identity.getComponent(Graphics)!; identityBorder.strokeColor = new Color(255, 207, 148);
         identityBorder.lineWidth = 3; identityBorder.stroke();
-        this.label(identity, template.name, -70, 24, 35, 220);
+        const identityName = this.label(identity, template.name, -70, 24, 35, 220);
+        identityName.overflow = Label.Overflow.SHRINK;
         this.label(identity, '五维能力档案 · 评分 0—100', -68, -23, 18, 230, new Color(255, 239, 219));
         const rating = this.panel(identity, 'Overall', 92, 96, 137, 0, new Color(194, 84, 37, 210), 14);
         this.label(rating, '综合', 0, 24, 16, 82, new Color(255, 229, 202));
@@ -382,7 +393,7 @@ export class PlayerWarehouseView {
         const quipBorder = quipPanel.getComponent(Graphics)!; quipBorder.strokeColor = new Color(203, 217, 205);
         quipBorder.lineWidth = 2; quipBorder.stroke();
         const quip = this.label(quipPanel, `“${template.quip}”`, 0, 0, 20, 370, new Color(38, 62, 74));
-        quip.enableWrapText = true; quip.lineHeight = 27;
+        quip.enableWrapText = true; quip.lineHeight = 27; quip.overflow = Label.Overflow.SHRINK;
         quip.node.getComponent(UITransform)?.setContentSize(370, 76);
 
         this.label(card, '能力属性', -252, 204, 23, 150, new Color(35, 80, 83));
@@ -398,28 +409,32 @@ export class PlayerWarehouseView {
         skillsGraphic.lineWidth = 3; skillsGraphic.stroke();
         this.skillIcon(skills, -242, 0);
         const skill = playerSkillPresentation(template);
-        this.label(skills, skill ? `【${skill.name}】` : '【专属技能】', 28, 45, 25, 430,
+        const skillTitle = this.label(skills, skill ? `【${skill.name}】` : '【专属技能】', 52, 48, 23, 420,
             new Color(226, 83, 37));
+        skillTitle.overflow = Label.Overflow.SHRINK;
         const skillText = skill
             ? skill.description
             : '技能系统尚未启用，效果与解锁条件将在后续版本确定。';
-        const placeholder = this.label(skills, skillText, 52, -2, 19, 420, new Color(44, 66, 78));
-        placeholder.enableWrapText = true; placeholder.lineHeight = 27;
-        placeholder.node.getComponent(UITransform)?.setContentSize(420, 64);
-        this.label(skills, skill ? '已启用' : '敬请期待', 218, -57, 17, 150,
-            skill ? new Color(24, 146, 58) : new Color(225, 47, 48));
+        const description = this.label(skills, skillText, 52, -25, 18, 420, new Color(44, 66, 78));
+        description.enableWrapText = true; description.lineHeight = 25;
+        description.overflow = Label.Overflow.SHRINK;
+        description.node.getComponent(UITransform)?.setContentSize(420, 82);
 
         this.pitchDecoration(card);
-        this.panel(card, 'ActionShadow', 316, 72, 0, -507, new Color(13, 91, 38), 19);
-        const footer = this.button(card, '返回仓库', infoFooterCenter.x, infoFooterCenter.y,
-            306, 68, new Color(24, 202, 67));
-        const footerBorder = footer.getComponent(Graphics)!; footerBorder.strokeColor = new Color(13, 116, 42);
-        footerBorder.lineWidth = 4; footerBorder.stroke();
+        const back = this.button(card, '返回仓库', infoBackCenter.x, infoBackCenter.y,
+            260, 68, new Color(61, 82, 100));
+        const backBorder = back.getComponent(Graphics)!; backBorder.strokeColor = new Color(33, 54, 72);
+        backBorder.lineWidth = 3; backBorder.stroke();
+        const active = this.snapshot.active.indexOf(templateId) >= 0;
+        const deploy = this.button(card, active ? '已上场' : '上场', infoDeployCenter.x, infoDeployCenter.y,
+            260, 68, active ? new Color(118, 133, 143) : rarityColor(template));
+        const deployBorder = deploy.getComponent(Graphics)!; deployBorder.strokeColor = new Color(33, 54, 72);
+        deployBorder.lineWidth = 3; deployBorder.stroke();
         this.infoPanel = overlay;
     }
 
     private closeInfo(): void {
-        this.infoPanel?.destroy(); this.infoPanel = undefined;
+        this.infoPanel?.destroy(); this.infoPanel = undefined; this.infoTemplateId = undefined;
     }
 
     private overall(template: PlayerTemplate): number {
@@ -444,12 +459,16 @@ export class PlayerWarehouseView {
         }
     }
 
-    private hitInfoClose(point: Vector2Data): boolean {
+    private hitInfoAction(point: Vector2Data): 'close' | 'deploy' | undefined {
         const top = Math.abs(point.x - infoCloseCenter.x) <= 38
             && Math.abs(point.y - infoCloseCenter.y) <= 38;
-        const footer = Math.abs(point.x - infoFooterCenter.x) <= 160
-            && Math.abs(point.y - infoFooterCenter.y) <= 40;
-        return top || footer;
+        const back = Math.abs(point.x - infoBackCenter.x) <= 130
+            && Math.abs(point.y - infoBackCenter.y) <= 40;
+        if (top || back) return 'close';
+        const deploy = Math.abs(point.x - infoDeployCenter.x) <= 130
+            && Math.abs(point.y - infoDeployCenter.y) <= 40;
+        return deploy && this.infoTemplateId && this.snapshot.active.indexOf(this.infoTemplateId) < 0
+            ? 'deploy' : undefined;
     }
 
     private portraitMedallion(parent: Node, templateId: string, x: number, y: number): void {
@@ -604,8 +623,9 @@ export class PlayerWarehouseView {
         const localY = point.y - this.drawer.position.y - this.viewport.position.y;
         for (const item of this.playerCards) {
             const x = point.x - item.node.position.x; const y = localY - item.node.position.y;
-            if (Math.abs(y + 68) <= 27 && Math.abs(x + 72) <= 68) return { templateId: item.id, action: 'info' };
-            if (Math.abs(y + 68) <= 27 && Math.abs(x - 72) <= 68) return { templateId: item.id, action: 'deploy' };
+            if (Math.abs(x) <= cardWidth / 2 && Math.abs(y) <= cardHeight / 2) {
+                return { templateId: item.id, action: 'info' };
+            }
         }
         return null;
     }
@@ -615,13 +635,16 @@ export class PlayerWarehouseView {
         return Math.abs(point.x) <= 330 && Math.abs(localY) <= viewportHeight / 2;
     }
     private maxScroll(): number {
-        const rows = Math.ceil(this.playerCards.length / 2);
-        const visibleHeight = 660 + this.drawerProgress * 260;
-        return Math.max(0, rows * rowStep - visibleHeight);
+        const rows = Math.ceil(this.playerCards.length / 4);
+        if (rows === 0) return 0;
+        const contentBottom = listStartY - (rows - 1) * rowStep - cardHeight / 2;
+        const visibleBottom = Math.max(-640 - this.drawer.position.y - this.viewport.position.y,
+            -viewportHeight / 2);
+        return Math.max(0, visibleBottom - contentBottom + 12);
     }
     private placeCards(): void {
-        this.playerCards.forEach((item, index) => item.node.setPosition(index % 2 === 0 ? -158 : 158,
-            listStartY - Math.floor(index / 2) * rowStep + this.scrollOffset));
+        this.playerCards.forEach((item, index) => item.node.setPosition((index % 4 - 1.5) * 160,
+            listStartY - Math.floor(index / 4) * rowStep + this.scrollOffset));
     }
     private setDrawerProgress(progress: number): void {
         this.drawerProgress = Math.max(0, Math.min(1, progress));

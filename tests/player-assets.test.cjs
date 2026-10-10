@@ -14,21 +14,32 @@ const catalog = parsePlayerCatalog(raw);
 const config = freezeConfig(prototypeConfig);
 const clone = value => structuredClone(value);
 
-test('球员目录唯一，既有头像与新增姓名占位都有效', () => {
-  assert.equal(catalog.version, 'players-005');
-  assert.equal(catalog.players.length, 16);
-  assert.equal(new Set(catalog.players.map(player => player.id)).size, 16);
-  assert.equal(catalog.players.filter(player => player.portraitPath).length, 6);
-  assert.equal(catalog.players.filter(player => !player.portraitPath).length, 10);
+test('20 名球员的能力档、技能和头像路径均有效', () => {
+  assert.equal(catalog.version, 'players-006');
+  assert.equal(catalog.players.length, 20);
+  assert.equal(new Set(catalog.players.map(player => player.id)).size, 20);
+  assert.deepEqual(catalog.players.reduce((counts, player) => {
+    counts[player.rarity] = (counts[player.rarity] ?? 0) + 1; return counts;
+  }, {}), { red: 5, gold: 6, purple: 5, blue: 4 });
+  assert.equal(getPlayerTemplate(catalog, 'messi').rarity, 'red');
+  assert.equal(getPlayerTemplate(catalog, 'cristiano-ronaldo').rarity, 'red');
+  assert.equal(catalog.players.filter(player => player.portraitPath).length, 20);
+  const portraitUuids = new Set();
   for (const player of catalog.players) {
     for (const key of ['weight', 'power', 'precision', 'mentality', 'curve']) {
       assert.ok(Number.isInteger(player[key]) && player[key] >= 0 && player[key] <= 100);
     }
     assert.ok(player.quip.length > 0);
+    assert.ok(playerSkillPresentation(player));
     if (player.portraitPath) {
       const filename = path.join(__dirname, '..', 'assets', 'resources', `${player.portraitPath}.png`);
       const bytes = fs.readFileSync(filename);
       assert.deepEqual([...bytes.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
+      const meta = JSON.parse(fs.readFileSync(`${filename}.meta`, 'utf8'));
+      assert.equal(meta.importer, 'image');
+      assert.equal(typeof meta.uuid, 'string');
+      assert.ok(!portraitUuids.has(meta.uuid), `头像 UUID 重复：${player.id}`);
+      portraitUuids.add(meta.uuid);
     }
   }
   assert.throws(() => parsePlayerCatalog({ ...raw, players: [...raw.players, raw.players[0]] }), /重复/);
@@ -36,18 +47,23 @@ test('球员目录唯一，既有头像与新增姓名占位都有效', () => {
   assert.throws(() => parsePlayerCatalog({ ...raw, players: [{ ...raw.players[0], mentality: -1 }] }), /mentality/);
   assert.throws(() => parsePlayerCatalog({ ...raw, players: [{ ...raw.players[0], quip: '' }] }), /quip/);
   assert.throws(() => parsePlayerCatalog({ ...raw, players: [{ ...raw.players[0], portraitPath: '../bad' }] }), /头像路径/);
+  assert.throws(() => parsePlayerCatalog({ ...raw, players: [{ ...raw.players[0], rarity: 'green' }] }), /无效/);
   assert.throws(() => parsePlayerCatalog({ ...raw, players: [{ ...raw.players[0], skill: {
     id: 'future', params: { amount: Infinity } } }] }), /技能参数/);
   assert.throws(() => parsePlayerCatalog({ ...raw, players: [{ ...raw.players[0], skill: {
     id: 'aim-wobble', params: { chance: 2, amplitudeDegrees: 9, frequencyHz: 1.4 } } }] }), /瞄准干扰/);
   assert.throws(() => parsePlayerCatalog({ ...raw, players: [{ ...raw.players[0], skill: {
     id: 'ball-hit-encore', params: { everyTurns: 1 } } }] }), /追加行动/);
+  assert.throws(() => parsePlayerCatalog({ ...raw, players: [{ ...raw.players[0], skill: {
+    id: 'power-burst', params: { everyTurns: 3, multiplier: 2 } } }] }), /强力发射/);
+  assert.throws(() => parsePlayerCatalog({ ...raw, players: [{ ...raw.players[0], skill: {
+    id: 'unknown', params: {} } }] }), /技能 ID/);
   assert.match(playerSkillPresentation(getPlayerTemplate(catalog, 'cristiano-ronaldo')).description, /35%/);
   assert.match(playerSkillPresentation(getPlayerTemplate(catalog, 'neymar')).description, /第 3 次/);
 });
 
 test('评分映射以 50 分为现有基准并保持单调', () => {
-  const base = { ...catalog.players[0], weight: 50, power: 50, precision: 50 };
+  const base = { ...catalog.players[0], skill: undefined, weight: 50, power: 50, precision: 50 };
   const middle = playerGameplayValues(base, config);
   assert.equal(middle.mass, config.playerMass);
   assert.equal(middle.maxImpulse, config.maxImpulse);
@@ -60,6 +76,12 @@ test('评分映射以 50 分为现有基准并保持单调', () => {
   }
   assert.ok(playerGameplayValues(getPlayerTemplate(catalog, 'van-dijk'), config).mass
     > playerGameplayValues(getPlayerTemplate(catalog, 'messi'), config).mass);
+  const messi = getPlayerTemplate(catalog, 'messi');
+  assert.ok(playerGameplayValues(messi, config).aimLength
+    > playerGameplayValues({ ...messi, skill: undefined }, config).aimLength);
+  const vanDijk = getPlayerTemplate(catalog, 'van-dijk');
+  assert.ok(playerGameplayValues(vanDijk, config).mass
+    > playerGameplayValues({ ...vanDijk, skill: undefined }, config).mass);
 });
 
 test('重量决定碰撞动量但不抵消同力量球员的起步速度', () => {

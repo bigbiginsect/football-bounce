@@ -1,21 +1,395 @@
 {
-  "version": "players-005",
+  "version": "players-006",
   "players": [
-    { "id": "messi", "name": "梅西", "portraitPath": "portraits/messi", "weight": 55, "power": 84, "precision": 96, "mentality": 96, "curve": 98, "quip": "球一到脚下，防守人的导航就开始重新规划。" },
-    { "id": "cristiano-ronaldo", "name": "C 罗", "portraitPath": "portraits/cristiano-ronaldo", "weight": 78, "power": 96, "precision": 82, "mentality": 95, "curve": 86, "quip": "只要还有一秒，他就觉得记分牌还能再跳一下。", "skill": { "id": "aim-wobble", "params": { "chance": 0.35, "amplitudeDegrees": 9, "frequencyHz": 1.4 } } },
-    { "id": "mbappe", "name": "姆巴佩", "portraitPath": "portraits/mbappe", "weight": 62, "power": 90, "precision": 82, "mentality": 88, "curve": 84, "quip": "你刚看清他的背影，他已经在门前等球了。" },
-    { "id": "de-bruyne", "name": "德布劳内", "portraitPath": "portraits/de-bruyne", "weight": 70, "power": 84, "precision": 94, "mentality": 92, "curve": 96, "quip": "传球线路别人看不见，他已经提前画好了。" },
-    { "id": "van-dijk", "name": "范戴克", "portraitPath": "portraits/van-dijk", "weight": 95, "power": 77, "precision": 78, "mentality": 95, "curve": 72, "quip": "站在那里就像一扇门，而且今天不打算开。" },
-    { "id": "haaland", "name": "哈兰德", "portraitPath": "portraits/haaland", "weight": 90, "power": 94, "precision": 72, "mentality": 89, "curve": 78, "quip": "皮球进禁区以后，他通常只问一句：吃了吗？" },
-    { "id": "neymar", "name": "内马尔", "weight": 48, "power": 82, "precision": 94, "mentality": 82, "curve": 99, "quip": "他把一条直线走成了看台会起立的弧线。", "skill": { "id": "ball-hit-encore", "params": { "everyTurns": 3 } } },
-    { "id": "salah", "name": "萨拉赫", "weight": 60, "power": 90, "precision": 87, "mentality": 91, "curve": 88, "quip": "左脚一抬，门将就开始猜下一道题。" },
-    { "id": "modric", "name": "莫德里奇", "weight": 55, "power": 70, "precision": 96, "mentality": 97, "curve": 94, "quip": "球场再拥挤，他也总能找到一条安静的路。" },
-    { "id": "kante", "name": "坎特", "weight": 62, "power": 65, "precision": 83, "mentality": 96, "curve": 72, "quip": "你以为那里没人，他已经把球带走了。" },
-    { "id": "rodri", "name": "罗德里", "weight": 85, "power": 84, "precision": 91, "mentality": 97, "curve": 85, "quip": "节奏交给他以后，比赛像多了一只钟。" },
-    { "id": "lewandowski", "name": "莱万多夫斯基", "weight": 82, "power": 92, "precision": 86, "mentality": 95, "curve": 86, "quip": "禁区里的半次机会，到他脚下也能凑成一次。" },
-    { "id": "vinicius", "name": "维尼修斯", "weight": 50, "power": 88, "precision": 78, "mentality": 82, "curve": 91, "quip": "他一加速，边线都像在往后退。" },
-    { "id": "bellingham", "name": "贝林厄姆", "weight": 76, "power": 86, "precision": 87, "mentality": 94, "curve": 83, "quip": "哪里需要多一个人，他就会从那里出现。" },
-    { "id": "ruben-dias", "name": "鲁本·迪亚斯", "weight": 98, "power": 80, "precision": 68, "mentality": 96, "curve": 65, "quip": "他不追着危险跑，他让危险自己绕路。" },
-    { "id": "son-heung-min", "name": "孙兴慜", "weight": 64, "power": 93, "precision": 89, "mentality": 92, "curve": 88, "quip": "左右脚都能开门，所以门将很难选锁。" }
+    {
+      "id": "messi",
+      "name": "梅西",
+      "portraitPath": "portraits/messi",
+      "weight": 55,
+      "power": 84,
+      "precision": 96,
+      "mentality": 96,
+      "curve": 98,
+      "quip": "球一到脚下，防守人的导航就开始重新规划。",
+      "rarity": "red",
+      "skill": {
+        "params": {
+          "multiplier": 1.18
+        },
+        "id": "aim-boost",
+        "name": "球王视野"
+      }
+    },
+    {
+      "id": "cristiano-ronaldo",
+      "name": "C 罗",
+      "portraitPath": "portraits/cristiano-ronaldo",
+      "weight": 78,
+      "power": 96,
+      "precision": 82,
+      "mentality": 95,
+      "curve": 86,
+      "quip": "只要还有一秒，他就觉得记分牌还能再跳一下。",
+      "skill": {
+        "id": "aim-wobble",
+        "params": {
+          "chance": 0.35,
+          "amplitudeDegrees": 9,
+          "frequencyHz": 1.4
+        },
+        "name": "压迫气场"
+      },
+      "rarity": "red"
+    },
+    {
+      "id": "neymar",
+      "name": "内马尔",
+      "weight": 48,
+      "power": 82,
+      "precision": 94,
+      "mentality": 82,
+      "curve": 99,
+      "quip": "他把一条直线走成了看台会起立的弧线。",
+      "skill": {
+        "id": "ball-hit-encore",
+        "params": {
+          "everyTurns": 3
+        },
+        "name": "桑巴连击"
+      },
+      "rarity": "red",
+      "portraitPath": "portraits/neymar"
+    },
+    {
+      "id": "modric",
+      "name": "莫德里奇",
+      "weight": 55,
+      "power": 70,
+      "precision": 96,
+      "mentality": 97,
+      "curve": 94,
+      "quip": "球场再拥挤，他也总能找到一条安静的路。",
+      "rarity": "red",
+      "portraitPath": "portraits/modric",
+      "skill": {
+        "params": {
+          "multiplier": 1.16
+        },
+        "id": "aim-boost",
+        "name": "中场罗盘"
+      }
+    },
+    {
+      "id": "lewandowski",
+      "name": "莱万多夫斯基",
+      "weight": 82,
+      "power": 92,
+      "precision": 86,
+      "mentality": 95,
+      "curve": 86,
+      "quip": "禁区里的半次机会，到他脚下也能凑成一次。",
+      "rarity": "red",
+      "portraitPath": "portraits/lewandowski",
+      "skill": {
+        "params": {
+          "everyTurns": 3,
+          "multiplier": 1.18
+        },
+        "id": "power-burst",
+        "name": "门前终结"
+      }
+    },
+    {
+      "id": "mbappe",
+      "name": "姆巴佩",
+      "portraitPath": "portraits/mbappe",
+      "weight": 62,
+      "power": 90,
+      "precision": 82,
+      "mentality": 88,
+      "curve": 84,
+      "quip": "你刚看清他的背影，他已经在门前等球了。",
+      "rarity": "gold",
+      "skill": {
+        "params": {
+          "everyTurns": 3,
+          "multiplier": 1.16
+        },
+        "id": "power-burst",
+        "name": "闪电突击"
+      }
+    },
+    {
+      "id": "de-bruyne",
+      "name": "德布劳内",
+      "portraitPath": "portraits/de-bruyne",
+      "weight": 70,
+      "power": 84,
+      "precision": 94,
+      "mentality": 92,
+      "curve": 96,
+      "quip": "传球线路别人看不见，他已经提前画好了。",
+      "rarity": "gold",
+      "skill": {
+        "params": {
+          "multiplier": 1.17
+        },
+        "id": "aim-boost",
+        "name": "手术刀传球"
+      }
+    },
+    {
+      "id": "van-dijk",
+      "name": "范戴克",
+      "portraitPath": "portraits/van-dijk",
+      "weight": 95,
+      "power": 77,
+      "precision": 78,
+      "mentality": 95,
+      "curve": 72,
+      "quip": "站在那里就像一扇门，而且今天不打算开。",
+      "rarity": "gold",
+      "skill": {
+        "params": {
+          "multiplier": 1.18
+        },
+        "id": "mass-boost",
+        "name": "后防壁垒"
+      }
+    },
+    {
+      "id": "haaland",
+      "name": "哈兰德",
+      "portraitPath": "portraits/haaland",
+      "weight": 90,
+      "power": 94,
+      "precision": 72,
+      "mentality": 89,
+      "curve": 78,
+      "quip": "皮球进禁区以后，他通常只问一句：吃了吗？",
+      "rarity": "gold",
+      "skill": {
+        "params": {
+          "everyTurns": 3,
+          "multiplier": 1.19
+        },
+        "id": "power-burst",
+        "name": "重炮轰门"
+      }
+    },
+    {
+      "id": "salah",
+      "name": "萨拉赫",
+      "weight": 60,
+      "power": 90,
+      "precision": 87,
+      "mentality": 91,
+      "curve": 88,
+      "quip": "左脚一抬，门将就开始猜下一道题。",
+      "rarity": "gold",
+      "portraitPath": "portraits/salah",
+      "skill": {
+        "params": {
+          "everyTurns": 3,
+          "multiplier": 1.14
+        },
+        "id": "power-burst",
+        "name": "左路疾射"
+      }
+    },
+    {
+      "id": "rodri",
+      "name": "罗德里",
+      "weight": 85,
+      "power": 84,
+      "precision": 91,
+      "mentality": 97,
+      "curve": 85,
+      "quip": "节奏交给他以后，比赛像多了一只钟。",
+      "rarity": "gold",
+      "portraitPath": "portraits/rodri",
+      "skill": {
+        "params": {
+          "multiplier": 1.14
+        },
+        "id": "mass-boost",
+        "name": "中场定盘"
+      }
+    },
+    {
+      "id": "son-heung-min",
+      "name": "孙兴慜",
+      "weight": 64,
+      "power": 93,
+      "precision": 89,
+      "mentality": 92,
+      "curve": 88,
+      "quip": "左右脚都能开门，所以门将很难选锁。",
+      "rarity": "purple",
+      "portraitPath": "portraits/son-heung-min",
+      "skill": {
+        "params": {
+          "everyTurns": 3,
+          "multiplier": 1.13
+        },
+        "id": "power-burst",
+        "name": "双足快射"
+      }
+    },
+    {
+      "id": "ruben-dias",
+      "name": "鲁本·迪亚斯",
+      "weight": 98,
+      "power": 80,
+      "precision": 68,
+      "mentality": 96,
+      "curve": 65,
+      "quip": "他不追着危险跑，他让危险自己绕路。",
+      "rarity": "purple",
+      "portraitPath": "portraits/ruben-dias",
+      "skill": {
+        "params": {
+          "multiplier": 1.13
+        },
+        "id": "mass-boost",
+        "name": "钢铁防线"
+      }
+    },
+    {
+      "id": "kante",
+      "name": "坎特",
+      "weight": 62,
+      "power": 65,
+      "precision": 83,
+      "mentality": 96,
+      "curve": 72,
+      "quip": "你以为那里没人，他已经把球带走了。",
+      "rarity": "purple",
+      "portraitPath": "portraits/kante",
+      "skill": {
+        "params": {
+          "multiplier": 1.12
+        },
+        "id": "mass-boost",
+        "name": "拦截机器"
+      }
+    },
+    {
+      "id": "vinicius",
+      "name": "维尼修斯",
+      "weight": 50,
+      "power": 88,
+      "precision": 78,
+      "mentality": 82,
+      "curve": 91,
+      "quip": "他一加速，边线都像在往后退。",
+      "rarity": "purple",
+      "portraitPath": "portraits/vinicius",
+      "skill": {
+        "params": {
+          "multiplier": 1.11
+        },
+        "id": "aim-boost",
+        "name": "边路洞察"
+      }
+    },
+    {
+      "id": "bellingham",
+      "name": "贝林厄姆",
+      "weight": 76,
+      "power": 86,
+      "precision": 87,
+      "mentality": 94,
+      "curve": 83,
+      "quip": "哪里需要多一个人，他就会从那里出现。",
+      "rarity": "purple",
+      "portraitPath": "portraits/bellingham",
+      "skill": {
+        "params": {
+          "everyTurns": 3,
+          "multiplier": 1.12
+        },
+        "id": "power-burst",
+        "name": "后插上"
+      }
+    },
+    {
+      "rarity": "blue",
+      "power": 76,
+      "mentality": 71,
+      "portraitPath": "portraits/garnacho",
+      "skill": {
+        "params": {
+          "everyTurns": 3,
+          "multiplier": 1.07
+        },
+        "id": "power-burst",
+        "name": "边线突袭"
+      },
+      "id": "garnacho",
+      "quip": "他的路线经常让人来不及转身。",
+      "precision": 67,
+      "weight": 52,
+      "curve": 73,
+      "name": "加纳乔"
+    },
+    {
+      "rarity": "blue",
+      "power": 68,
+      "mentality": 78,
+      "portraitPath": "portraits/gavi",
+      "skill": {
+        "params": {
+          "multiplier": 1.07
+        },
+        "id": "aim-boost",
+        "name": "灵动视野"
+      },
+      "id": "gavi",
+      "quip": "敢把节奏带到最拥挤的地方。",
+      "precision": 76,
+      "weight": 54,
+      "curve": 70,
+      "name": "加维"
+    },
+    {
+      "rarity": "blue",
+      "power": 77,
+      "mentality": 72,
+      "portraitPath": "portraits/endrick",
+      "skill": {
+        "params": {
+          "everyTurns": 3,
+          "multiplier": 1.08
+        },
+        "id": "power-burst",
+        "name": "新星重炮"
+      },
+      "id": "endrick",
+      "quip": "下一次发射，总想比上一次更有力。",
+      "precision": 66,
+      "weight": 63,
+      "curve": 70,
+      "name": "恩德里克"
+    },
+    {
+      "rarity": "blue",
+      "power": 64,
+      "mentality": 76,
+      "portraitPath": "portraits/rico-lewis",
+      "skill": {
+        "params": {
+          "multiplier": 1.06
+        },
+        "id": "mass-boost",
+        "name": "机敏卡位"
+      },
+      "id": "rico-lewis",
+      "quip": "补上空档，比喊队友回来更快。",
+      "precision": 74,
+      "weight": 58,
+      "curve": 68,
+      "name": "里科·刘易斯"
+    }
   ]
 }

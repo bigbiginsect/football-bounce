@@ -117,8 +117,9 @@ export class CocosPhysics implements PhysicsPort {
         }
         this.system.physicsWorld.syncSceneToPhysics();
     }
-    launch(command: Command): void {
-        const impulse = command.power * (this.impulses.get(command.playerId) ?? this.config.maxImpulse);
+    launch(command: Command, impulseMultiplier = 1): void {
+        const impulse = command.power * impulseMultiplier
+            * (this.impulses.get(command.playerId) ?? this.config.maxImpulse);
         this.bodies.get(command.playerId)!.applyLinearImpulseToCenter(
             new Vec2(command.direction.x * impulse, command.direction.y * impulse), true);
         this.limitSpeeds();

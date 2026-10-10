@@ -16,7 +16,7 @@ class SkillPhysics {
   contacts = [];
   onStep = () => {};
   restore(state) { this.frame = clone({ players: state.players, ball: state.ball }); }
-  launch(command) { this.launches.push(clone(command)); }
+  launch(command, impulseMultiplier = 1) { this.launches.push({ ...clone(command), impulseMultiplier }); }
   step(dt) { this.onStep(this.frame, dt); }
   sample() {
     const frame = clone(this.frame);
@@ -55,6 +55,22 @@ function launch(match, player, commandId, direction = { x: 1, y: 0 }) {
 function settle(match) {
   for (let step = 0; step < 3; step++) match.advance(config.fixedStep);
 }
+
+test('强力发射只在本人第 N 次正常行动放大物理冲量，命令仍记录原力度', () => {
+  const created = createStandardMatchState('burst', config, 7, catalog);
+  const initial = { ...created, kickoff: { ...created.kickoff, pending: false } };
+  const mbappe = initial.players.find(player => player.ownerId === initial.activeOperatorId
+    && player.templateId === 'mbappe');
+  const physics = new SkillPhysics();
+  const primed = { ...initial, skills: { ...initial.skills,
+    launchCounts: { [mbappe.instanceId]: 2 } } };
+  const boosted = new LocalMatch(primed, physics, config);
+  assert.equal(launch(boosted, mbappe, 'burst').ok, true);
+  assert.equal(physics.launches[0].power, 0.5);
+  assert.ok(Math.abs(physics.launches[0].impulseMultiplier - 1.16) < 1e-12);
+  assert.equal(boosted.getAcceptedCommands()[0].power, 0.5);
+  assert.equal(boosted.getSnapshot().skills.launchCounts[mbappe.instanceId], 0);
+});
 
 test('C 罗技能使用权威随机状态，并让对手所见方向与真实发射方向一致', () => {
   const { match, physics } = setup();
