@@ -266,6 +266,13 @@ export class LocalMatch {
             launchCounts[player.instanceId] = nextCount;
             if (nextCount === 0) bonus = { playerId: player.instanceId, opponentHit: false };
         }
+        let burstMultiplier = 1;
+        if (!wasForcedBonus && player.skill?.id === 'power-burst') {
+            const everyTurns = skillNumber(player, 'power-burst', 'everyTurns', 3);
+            const nextCount = ((launchCounts[player.instanceId] ?? 0) + 1) % everyTurns;
+            launchCounts[player.instanceId] = nextCount;
+            if (nextCount === 0) burstMultiplier = skillNumber(player, 'power-burst', 'multiplier', 1);
+        }
         let aimWobble = this.state.skills.aimWobble?.targetOperatorId === this.state.activeOperatorId
             ? null : this.state.skills.aimWobble;
         let randomState = this.state.random.state;
@@ -293,7 +300,7 @@ export class LocalMatch {
         this.accumulator = 0; this.steps = 0; this.quietSteps = 0; this.droppedSeconds = 0;
         this.endReason = 'moving';
         if (this.physics) {
-            try { this.physics.launch({ ...command, direction: launchDirection }); }
+            try { this.physics.launch({ ...command, direction: launchDirection }, burstMultiplier); }
             catch { this.finishSimulation('invalid'); }
         }
         this.recordSnapshot();

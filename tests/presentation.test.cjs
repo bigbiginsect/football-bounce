@@ -77,8 +77,8 @@ function hold(view, id, point) { view.touchStart(id, point); view.update(0.2); }
 
 test('普通纵向滑动锁定滚动，即使随后停住超过长按时间也不换人', () => {
   const { view, edits } = lineupGestureFixture();
-  view.touchStart(1, { x: -158, y: -380 }); view.update(0.199);
-  view.touchMove(1, { x: -157, y: -300 }); view.update(1);
+  view.touchStart(1, { x: -240, y: -380 }); view.update(0.199);
+  view.touchMove(1, { x: -239, y: -300 }); view.update(1);
   assert.equal(view.touch.mode, 'scroll'); assert.equal(view.scrollOffset, 80);
   assert.equal(view.ghost, undefined);
   view.touchMove(1, { x: -144, y: -34 }); view.touchEnd(1, { x: -144, y: -34 });
@@ -87,15 +87,16 @@ test('普通纵向滑动锁定滚动，即使随后停住超过长按时间也�
 
 test('长按容差内不会提前抓起，0.2 秒后拖入仅提交一次且旧球员回仓', () => {
   const { view, editor, edits, plain } = lineupGestureFixture();
-  view.touchStart(1, { x: -158, y: -380 }); view.update(0.199);
-  view.touchMove(1, { x: -148, y: -380 }); assert.equal(view.touch.mode, 'pending');
+  const candidate = view.snapshot.bench[0];
+  view.touchStart(1, { x: -240, y: -380 }); view.update(0.199);
+  view.touchMove(1, { x: -230, y: -380 }); assert.equal(view.touch.mode, 'pending');
   view.update(0.001); assert.equal(view.touch.mode, 'drag'); assert.ok(view.ghost);
   const target = view.slotPoints[0]; view.touchMove(1, target); assert.ok(view.targetRing.target);
   view.touchEnd(1, target); view.touchEnd(1, target);
-  assert.deepEqual(plain(edits), [{ type: 'ReplaceFromBench', templateId: 'haaland', slot: 0 }]);
-  assert.equal(editor.getSnapshot().blue[0], 'haaland');
+  assert.deepEqual(plain(edits), [{ type: 'ReplaceFromBench', templateId: candidate, slot: 0 }]);
+  assert.equal(editor.getSnapshot().blue[0], candidate);
   assert.ok(editor.getSnapshot().bench.includes('van-dijk'));
-  assert.ok(!view.snapshot.bench.includes('haaland')); assert.equal(view.ghost, undefined);
+  assert.ok(!view.snapshot.bench.includes(candidate)); assert.equal(view.ghost, undefined);
 });
 
 test('滚动深处抓人到顶部，自动滚回球场后按当前位置命中槽位', () => {
@@ -112,10 +113,11 @@ test('滚动深处抓人到顶部，自动滚回球场后按当前位置命中�
 
 test('部分滚动时替换使用实际屏幕坐标，换人保留滚动位置', () => {
   const { view, editor, edits } = lineupGestureFixture(); view.setScroll(150);
-  hold(view, 1, { x: -158, y: -230 });
+  const candidate = view.snapshot.bench[0];
+  hold(view, 1, { x: -240, y: -230 });
   const target = { x: view.slotPoints[0].x, y: view.slotPoints[0].y + 150 };
   view.touchMove(1, target); view.touchEnd(1, target);
-  assert.equal(edits.length, 1); assert.equal(editor.getSnapshot().blue[0], 'haaland');
+  assert.equal(edits.length, 1); assert.equal(editor.getSnapshot().blue[0], candidate);
   assert.equal(view.scrollOffset, 150); assert.equal(view.content.position.y, 180);
 });
 
@@ -125,23 +127,26 @@ test('场上长按交换，原槽位与空白落点无变更', () => {
   assert.deepEqual(plain(edits), [{ type: 'SwapSlots', from: 0, to: 1 }]);
   assert.equal(editor.getSnapshot().blue[0], 'cristiano-ronaldo');
   hold(view, 2, view.slotPoints[0]); assert.equal(view.targetRing.target, null); view.touchEnd(2, view.slotPoints[0]);
-  hold(view, 3, { x: -158, y: -380 }); view.touchMove(3, { x: 310, y: 200 });
+  hold(view, 3, { x: -240, y: -380 }); view.touchMove(3, { x: 310, y: 200 });
   view.touchEnd(3, { x: 310, y: 200 });
   assert.equal(edits.length, 1); assert.equal(view.info.isOpen, false);
 });
 
 test('只有可见球场落点可换人，固定标题和确认区不作为拖动目标', () => {
   const { view, edits } = lineupGestureFixture(); view.setScroll(500);
-  hold(view, 1, { x: -158, y: 120 });
-  view.touchMove(1, { x: -144, y: 466 }); // 第一槽位只在视口边缘露出。
-  assert.equal(view.hitSlot({ x: -144, y: 466 }), 0);
-  assert.equal(view.hitSlot({ x: 0, y: 602 }), null); // 隐藏在标题后的第三槽位。
-  view.touchEnd(1, { x: 0, y: 602 }); assert.equal(edits.length, 0);
+  hold(view, 1, { x: -240, y: -380 + view.scrollOffset });
+  const visible = { x: view.slotPoints[0].x, y: view.slotPoints[0].y + view.scrollOffset };
+  const hidden = { x: view.slotPoints[2].x, y: view.slotPoints[2].y + view.scrollOffset };
+  view.touchMove(1, visible);
+  assert.equal(view.hitSlot(visible), 0);
+  assert.ok(hidden.y > 470); // 第三槽位已滚入固定标题区域。
+  assert.equal(view.hitSlot(hidden), null);
+  view.touchEnd(1, hidden); assert.equal(edits.length, 0);
 });
 
 test('第二触点不可抢占、结束或取消拖动，取消后不会自动滚动或提交', () => {
   const { view, edits } = lineupGestureFixture(); view.setScroll(300);
-  hold(view, 1, { x: -158, y: -80 }); const ghost = view.ghost;
+  hold(view, 1, { x: -240, y: -80 }); const ghost = view.ghost;
   view.touchStart(2, view.slotPoints[0]); view.touchMove(2, view.slotPoints[1]);
   view.touchCancel(2); view.touchEnd(2, view.slotPoints[1]);
   assert.equal(view.touch.id, 1); assert.equal(edits.length, 0);
@@ -152,8 +157,9 @@ test('第二触点不可抢占、结束或取消拖动，取消后不会自动�
 
 test('轻点首发与候补查看信息，顶部关闭和底部返回均保留滚动', () => {
   const { view, edits } = lineupGestureFixture(); view.setScroll(150);
-  view.touchStart(1, { x: -158, y: -230 }); view.touchEnd(1, { x: -158, y: -230 });
-  assert.equal(view.info.id, 'haaland'); assert.equal(view.info.isOpen, true);
+  const candidate = view.snapshot.bench[0];
+  view.touchStart(1, { x: -240, y: -230 }); view.touchEnd(1, { x: -240, y: -230 });
+  assert.equal(view.info.id, candidate); assert.equal(view.info.isOpen, true);
   view.touchStart(2, { x: 296, y: 535 }); view.touchEnd(2, { x: 296, y: 535 });
   assert.equal(view.info.isOpen, false); assert.equal(view.scrollOffset, 150);
   const point = { x: view.slotPoints[0].x, y: view.slotPoints[0].y + 150 };
@@ -174,12 +180,13 @@ test('阵型选择只改变站位；双队确认及返回保留名单与阵型�
   view.setScroll(200); view.touchStart(2, { x: 77, y: -581 }); view.touchEnd(2, { x: 77, y: -581 });
   assert.equal(view.snapshot.side, 'red'); assert.equal(view.scrollOffset, 0);
   assert.equal(view.snapshot.formationId, '2-1-2');
-  hold(view, 3, { x: -158, y: -380 }); view.touchMove(3, view.slotPoints[4]); view.touchEnd(3, view.slotPoints[4]);
+  const candidate = view.snapshot.bench[0];
+  hold(view, 3, { x: -240, y: -380 }); view.touchMove(3, view.slotPoints[4]); view.touchEnd(3, view.slotPoints[4]);
   view.touchStart(4, { x: -255, y: -581 }); view.touchEnd(4, { x: -255, y: -581 });
   assert.equal(view.snapshot.side, 'blue'); assert.equal(view.snapshot.formationId, '2-2-1');
-  assert.equal(view.snapshot.red[4], 'haaland'); assert.deepEqual([...view.snapshot.blue], before);
+  assert.equal(view.snapshot.red[4], candidate); assert.deepEqual([...view.snapshot.blue], before);
   view.submit({ type: 'ConfirmSide' }); view.submit({ type: 'ConfirmSide' });
-  assert.equal(editor.toMatchLineups().red[4].templateId, 'haaland');
+  assert.equal(editor.toMatchLineups().red[4].templateId, candidate);
   assert.deepEqual(JSON.parse(JSON.stringify(editor.toMatchLineups().blue.map(p => p.position))),
     JSON.parse(JSON.stringify(formationPositions('2-2-1', 'blue'))));
   assert.ok(edits.every(edit => !['SelectSlot', 'DeployPlayer'].includes(edit.type)));
@@ -194,10 +201,10 @@ test('边缘自动滚动渐进、与帧率一致并受上下界限制', () => {
     for (let i = 0; i < hz; i++) view.update(1 / hz);
     return view.scrollOffset;
   };
-  assert.ok(Math.abs(run(30, 422, 800) - run(120, 422, 800)) < 1e-6);
-  assert.ok(Math.abs(run(60, 422, 800) - 440) < 1e-6); // 半个边缘区域，一秒 360 单位。
+  assert.ok(Math.abs(run(30, 422, 400) - run(120, 422, 400)) < 1e-6);
+  assert.ok(Math.abs(run(60, 422, 400) - 40) < 1e-6); // 半个边缘区域，一秒 360 单位。
   assert.equal(run(60, 470, 300), 0);
-  const { view } = lineupGestureFixture(); hold(view, 1, { x: -158, y: -380 });
+  const { view } = lineupGestureFixture(); hold(view, 1, { x: -240, y: -380 });
   view.touchMove(1, { x: 0, y: -530 });
   for (let i = 0; i < 160; i++) view.update(1 / 60);
   assert.equal(view.scrollOffset, view.maxScroll());
@@ -212,18 +219,33 @@ test('所有阵型首发与首行候补处于首屏视口内，空仓库及滚�
     for (const point of view.slotPoints) {
       assert.ok(point.y - 56 > -530 && point.y + 56 < 470);
     }
-    assert.equal(view.benchCards[0].position.y - 101, -481);
+    assert.equal(view.benchCards[0].position.y - 73, -453);
   }
   view.setScroll(10000); assert.equal(view.scrollOffset, view.maxScroll());
-  const last = view.benchCards.at(-1); assert.ok(last.position.y + view.scrollOffset - 101 >= -530);
+  const last = view.benchCards.at(-1); assert.ok(last.position.y + view.scrollOffset - 73 >= -530);
   view.setDraft({ ...view.snapshot, bench: [] }); assert.equal(view.scrollOffset, 0); assert.equal(view.maxScroll(), 0);
+});
+
+test('统一候补四列命中每张卡，列间空隙不抓人，末行完整可达', () => {
+  const { view } = lineupGestureFixture();
+  assert.deepEqual(view.benchCards.slice(0, 4).map(card => card.position.x), [-240, -80, 80, 240]);
+  for (let index = 0; index < view.benchCards.length; index++) {
+    const card = view.benchCards[index];
+    view.setScroll(Math.max(0, -380 - card.position.y));
+    const point = { x: card.position.x, y: card.position.y + view.scrollOffset };
+    assert.equal(view.hitSource(point).templateId, view.snapshot.bench[index]);
+  }
+  view.setScroll(0);
+  assert.equal(view.hitSource({ x: -160, y: -380 }), undefined);
+  view.setScroll(view.maxScroll());
+  assert.ok(view.benchCards.at(-1).position.y + view.scrollOffset - 73 >= -530);
 });
 
 test('长按取消和外部切队清理手势，帧时长异常不抓人', () => {
   const { view, editor } = lineupGestureFixture();
-  view.touchStart(1, { x: -158, y: -380 }); view.update(NaN); view.update(Infinity); view.update(-1);
+  view.touchStart(1, { x: -240, y: -380 }); view.update(NaN); view.update(Infinity); view.update(-1);
   assert.equal(view.touch.heldSeconds, 0); view.touchCancel(); view.update(1); assert.equal(view.ghost, undefined);
-  hold(view, 2, { x: -158, y: -380 }); const ghost = view.ghost;
+  hold(view, 2, { x: -240, y: -380 }); const ghost = view.ghost;
   editor.execute({ type: 'ConfirmSide' }); view.setDraft(editor.getSnapshot());
   assert.equal(view.touch, undefined); assert.equal(view.ghost, undefined); assert.equal(ghost.destroyed, true);
   assert.equal(view.scrollOffset, 0);
@@ -247,9 +269,9 @@ function setup() {
 test('统一赛前输入由 Boot 分发，失焦取消长按和拖动，销毁清理视图', () => {
   const { boot, event } = setup(); const { view } = lineupGestureFixture();
   boot.match = undefined; boot.screen = undefined; boot.lineupView = view;
-  boot.beginTouch(event(-158, -380)); boot.update(0.21); assert.equal(view.touch.mode, 'drag');
+  boot.beginTouch(event(-240, -380)); boot.update(0.21); assert.equal(view.touch.mode, 'drag');
   boot.pause(); assert.equal(view.touch, undefined); assert.equal(view.ghost, undefined);
-  boot.beginTouch(event(-158, -380)); assert.equal(boot.paused, false);
+  boot.beginTouch(event(-240, -380)); assert.equal(boot.paused, false);
   boot.update(0.21); boot.moveTouch(event(-144, -34)); boot.cancelTouch(event(-144, -34));
   boot.endTouch(event(-144, -34)); assert.equal(view.snapshot.blue[0], 'van-dijk');
   let disposed = false; view.dispose = () => { disposed = true; }; boot.onDestroy(); assert.equal(disposed, true);
@@ -546,7 +568,7 @@ test('圆形头像节点按实例缓存，无头像球员改用姓名徽章', ()
   cc.Mask = class { static Type = { GRAPHICS_ELLIPSE: 1 }; };
   cc.Sprite = class { static SizeMode = { CUSTOM: 2 }; };
   cc.Graphics = class { circle() {} fill() {} stroke() {} roundRect() {} };
-  cc.Label = class { static HorizontalAlign = { CENTER: 1 }; static VerticalAlign = { CENTER: 1 }; };
+  cc.Label = class { static HorizontalAlign = { CENTER: 1 }; static VerticalAlign = { CENTER: 1 }; static Overflow = { SHRINK: 1 }; };
   const screen = Object.create(PrototypeView.prototype);
   screen.config = config; screen.catalog = catalog;
   screen.portraitFrames = new Map(catalog.players.filter(player => player.portraitPath)
@@ -561,6 +583,8 @@ test('圆形头像节点按实例缓存，无头像球员改用姓名徽章', ()
   assert.equal(screen.portraitLayer.children.length, 10);
   const changed = { ...state, players: state.players.map((player, index) =>
     index === 0 ? { ...player, templateId: 'neymar' } : player) };
+  // 临时缺图时仍应有姓名占位；正式目录中的内马尔已有头像。
+  screen.portraitFrames.delete('neymar');
   screen.setPlayers(changed);
   assert.equal(first.destroyed, true);
   assert.equal(screen.portraitNodes.get('blue-1').templateId, 'neymar');
@@ -597,7 +621,7 @@ test('实际统一视图构造仅创建一个滚动页，首发与候补分开�
   cc.Canvas = class {};
   cc.Mask = class { static Type = { GRAPHICS_RECT: 1, GRAPHICS_ELLIPSE: 2 }; };
   cc.Sprite = class { static SizeMode = { CUSTOM: 1 }; };
-  cc.Label = class { static HorizontalAlign = { CENTER: 1 }; static VerticalAlign = { CENTER: 1 }; };
+  cc.Label = class { static HorizontalAlign = { CENTER: 1 }; static VerticalAlign = { CENTER: 1 }; static Overflow = { SHRINK: 1 }; };
   cc.Graphics = class { clear() {} circle() {} rect() {} roundRect() {} fill() {} stroke() {} moveTo() {} lineTo() {} };
   const parent = new UiNode('Canvas'); parent.addComponent(cc.UITransform).setContentSize(720, 1280);
   parent.addComponent(cc.Canvas).cameraComponent = { screenToWorld: point => point };
@@ -615,9 +639,24 @@ test('实际统一视图构造仅创建一个滚动页，首发与候补分开�
     .map(item => item.string).concat(node.children.flatMap(labels));
   const pageText = labels(view.root);
   assert.ok(!pageText.includes('上场') && !pageText.includes('返回仓库'));
-  view.touchStart(1, { x: -158, y: -380 }); view.touchEnd(1, { x: -158, y: -380 });
+  assert.deepEqual(view.benchCards[0].getComponent(cc.UITransform).size, { width: 150, height: 146 });
+  const rarityRgb = load('assets/scripts/core/PlayerCatalog.ts').playerRarityPresentation(
+    getPlayerTemplate(catalog, view.snapshot.bench[0]).rarity).rgb;
+  const border = view.benchCards[0].getComponent(cc.Graphics).strokeColor;
+  assert.deepEqual([border.r, border.g, border.b], Array.from(rarityRgb));
+  view.touchStart(1, { x: -240, y: -380 }); view.touchEnd(1, { x: -240, y: -380 });
   assert.equal(view.info.isOpen, true); assert.ok(labels(view.root).includes('球员信息'));
   assert.ok(labels(view.root).includes('能力属性')); assert.ok(labels(view.root).includes('返回阵容'));
+  const nodes = node => [node, ...node.children.flatMap(nodes)];
+  const infoNodes = nodes(view.info.infoPanel);
+  const quip = infoNodes.find(node => node.components.some(item => item.string?.startsWith('“')));
+  assert.equal(quip.getComponent(cc.Label).overflow, cc.Label.Overflow.SHRINK);
+  assert.deepEqual(quip.getComponent(cc.UITransform).size, { width: 370, height: 76 });
+  const description = infoNodes.find(node => node.getComponent(cc.Label)?.enableWrapText
+    && node.getComponent(cc.UITransform).size.width === 420);
+  assert.deepEqual(description.getComponent(cc.UITransform).size, { width: 420, height: 82 });
+  assert.equal(description.getComponent(cc.Label).overflow, cc.Label.Overflow.SHRINK);
+  assert.ok(!labels(view.info.infoPanel).includes('已启用'));
   view.touchStart(2, { x: 296, y: 535 }); view.touchEnd(2, { x: 296, y: 535 });
   assert.equal(view.info.isOpen, false);
   view.dispose(); view.dispose(); assert.equal(view.root.destroying, true);
@@ -658,6 +697,8 @@ test('物理发射读取当前球员专属冲量', () => {
   cc.Vec2 = class { constructor(x, y) { this.x = x; this.y = y; } };
   physics.launch({ playerId: 'blue-1', power: 1, direction: { x: 1, y: 0 } });
   physics.launch({ playerId: 'blue-2', power: 1, direction: { x: 1, y: 0 } });
+  physics.launch({ playerId: 'blue-1', power: 1, direction: { x: 1, y: 0 } }, 1.15);
   assert.ok(calls[1].x > calls[0].x);
+  assert.ok(Math.abs(calls[2].x - calls[0].x * 1.15) < 1e-12);
   assert.equal(calls[0].y, 0);
 });

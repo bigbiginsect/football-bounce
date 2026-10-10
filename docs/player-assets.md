@@ -1,50 +1,44 @@
 # 球员资产录入流程
 
-本流程用于内部试玩原型。现实球星肖像的公开发行用途须另行确认。首批目录见 `assets/resources/config/players.json`；头像放在 `assets/resources/portraits/`，文件名等于稳定球员 ID。
+本流程用于内部试玩原型。现实球星肖像的公开发行用途须另行确认。当前 20 人目录见 `assets/resources/config/players.json`；头像放在 `assets/resources/portraits/`，文件名等于稳定球员 ID。
 
 ## 统一 imagegen 提示词
 
-以下模板是后续新增球员的统一提示词。每位球员单独调用 imagegen，只替换 `{NAME}`、`{PEAK_ERA}` 和 `{DISTINCTIVE_FEATURES}`；不要为单个球员另起一套风格描述，也不要用球队标识、号码或照片复制来代替人物特征。首批梅西头像确立风格，后续优先尝试把它仅作为风格参考，并明确不得迁移人物身份。2026-09-23 实际生成后四人时，带公众人物图片参考的请求被 imagegen 安全系统拒绝，因此改用下方同一文字模板分别生成，并人工检查线条、配色和构图；后续遇到相同拒绝时沿用此方式，不反复提交身份迁移请求。
+2026-10-10 起以用户提供的正面圆形徽章为风格参考。每位球员单独生成，只替换 `{NAME}` 和 `{DISTINCTIVE_FEATURES}`，要求暖橙内底、深灰金属外圈、正面头肩肖像、无文字及品牌。图片仅作风格参考，不迁移参考图人物身份。对生成工具拒绝的人物保留既有项目头像，并在施工记录中写明。
 
 ```text
 Use case: stylized-concept
-Asset type: 1:1 square portrait for a small circular football player token in a mobile 2D game
-Subject: {NAME} during {PEAK_ERA}; preserve recognizable facial structure,
-hairstyle and facial hair using {DISTINCTIVE_FEATURES}; original interpretation
-of their real appearance
-Style: polished original 2D cartoon illustration, clean medium-weight dark
-outlines, soft cel shading, natural skin tones, gently warm muted colors,
-lively but respectful expression; consistent series style
-Composition: head and upper shoulders, face centered and readable at 40 pixels;
-full head and key features inside the central 80% circular safe area;
-eye-level front-facing slight three-quarter turn
-Backdrop: simple soft warm ivory background with subtle pale sage vignette,
-no scene details
-Constraints: no text, numbers, watermark, club or national-team crest,
-sponsor, branded kit, copied photograph, or pre-drawn circular border.
-Plain unbranded dark teal football shirt.
+Asset type: square portrait badge for a mobile tabletop football game.
+Reference image: style and composition only, not the person.
+Subject: {NAME}; {DISTINCTIVE_FEATURES}.
+Style: respectful, semi-realistic polished painted illustration.
+Composition: front-facing head and upper shoulders, centered, readable at 40 pixels.
+Backdrop: vivid orange circular inner field, thick glossy charcoal metallic
+outer rim, white square corners; whole badge inside the canvas.
+Clothing: plain dark football shirt without logo.
+Constraints: no text, numbers, watermark, football, club crests or other people.
 ```
 
-身份特征填充参考：梅西——深棕短发和整齐短胡须；C 罗——棱角分明的面部、深色短发；姆巴佩——极短黑发、年轻面部；德布劳内——浅金短发、浅色眉毛；范戴克——后束深色头发、修整胡须；哈兰德——金色后梳长发、年轻而强壮的面部。人物、构图和小尺寸辨识度须逐张人工核对。把选中的图片复制进工程，不覆盖既有图片；换版使用新文件名并更新目录。Creator 导入后保留 `.meta`。
+人物、构图和小尺寸辨识度须逐张核对。把选中的图片复制进工程；确需换版时按需求决定替换既有资源或使用新文件名并更新目录。Creator 导入后保留 `.meta`。
 
-第二批哈兰德头像保存在 `portraits/haaland.png`，现版效果已用于内部试玩。本次实际提交给 imagegen 的文字与上述统一模板不完全一致，原文只在 [第二批施工记录](../worklogs/2026-09-23-stage3-player-assets/b2.md) 中留作生成溯源，**不作为后续球员的提示词范本**。后续新增球员仍按本节模板、资源导入和目录验证流程执行。
+首批六张旧头像的生成溯源仍见 [第二批施工记录](../worklogs/2026-09-23-stage3-player-assets/b2.md)。当前梅西保留旧版插画，其余头像按本批徽章风格生成；后续新增球员使用本节模板。
 
 ## 目录与属性
 
-`players.json` 有 `version` 和 `players`。每人包含稳定的 `id`、显示名称 `name`、俏皮话 `quip`，以及 `weight`、`power`、`precision`、`mentality`、`curve` 五项评分。可选 `portraitPath`；有头像时必须固定为 `portraits/<id>`，未提供时阵容、仓库、详情和比赛圆片都使用姓名徽章占位，启动流程不会请求不存在的图片。评分均为 0–100 的整数，代表游戏平衡值，不是官方评分；`quip` 是仓库信息卡文案。可选 `skill: { id, params }` 由目录校验后复制到场上实例，未知技能仍只作为扩展入口，不会自动获得规则效果。改人物 ID 视为新模板，不悄悄重用旧 ID。
+`players.json` 有 `version` 和 `players`。每人包含稳定的 `id`、显示名称 `name`、能力档 `rarity`、俏皮话 `quip`，以及 `weight`、`power`、`precision`、`mentality`、`curve` 五项评分。`rarity` 为 `red > gold > purple > blue`，是内部游戏设计档位，不是现实世界官方排名。20 人均有 `portraitPath: portraits/<id>`；资源暂缺时界面保留姓名徽章兜底。评分均为 0–100 的整数。每人有 `skill: { id, name, params }`，目录在运行时验证 ID 和参数。改人物 ID 视为新模板，不悄悄重用旧 ID。
 
 首批评分按代表性巅峰技术特点作主观归一：梅西 `55/84/96`、C 罗 `78/96/82`、姆巴佩 `62/90/82`、德布劳内 `70/84/94`、范戴克 `95/77/78`（顺序为重量/力度/精度）。添加新人时与已有五人横向比较，保持相近实力的合理次序，不按当前年龄自动衰减。
 
-第二批候补哈兰德的重量/力度/精准暂定为 `90/94/72`，作为强壮前锋的可调整游戏设计值。2026-09-29 目录先升级为 `players-004`，新增十名姓名占位候补；这些人物暂不制作头像，评分与俏皮话仍为内部试玩设计值。随后目录升级为 `players-005`，启用首批两个技能：C 罗的 `aim-wobble` 暂按 35% 概率、9° 最大摆幅和 1.4 Hz 作用于对手下一次瞄准；内马尔的 `ball-hit-encore` 每第 3 次本人正常行动武装，皮球碰到敌方且未被进球、违例、异常或终局结算覆盖时，由同一内马尔追加行动一次。技能概率、计数、摆动相位和强制球员均保存于 GameState，奖励行动不累计内马尔的下一周期。
+`players-006` 共 20 人，红档 5、金档 6、紫档 5、蓝档 4。保留 C 罗的 `aim-wobble` 与内马尔的 `ball-hit-encore`，新增三种可复用技能机制：`power-burst` 每第 N 次本人正常发射提高物理冲量；`aim-boost` 常驻延长辅助瞄准线；`mass-boost` 常驻增加碰撞质量，并同步补偿发射冲量。各人技能名称和倍率由目录配置。强力发射计数与原有连击计数都保存在 GameState；客户端发射 Command 仍只带归一化力度，实际技能倍率由本地权威层传给物理适配器。具体数值为待 Creator 试玩的设计假设。
 
 游戏参数映射集中在 `PlayerCatalog.ts`。评分 50 等于 stage2-006 基准：
 
 ```text
-massScale  = weightMassFactorPer50 ^ ((weight - 50) / 50)
+massScale  = weightMassFactorPer50 ^ ((weight - 50) / 50) * massBoost
 mass       = playerMass * massScale
 powerScale = 1 + (power - 50) * powerSpeedScalePerPoint
 maxImpulse = maxImpulse * massScale * powerScale
-aimLength  = aimLength * (1 + (precision - 50) * precisionAimScalePerPoint)
+aimLength  = aimLength * (1 + (precision - 50) * precisionAimScalePerPoint) * aimBoost
 powerCircleMaxRadius = powerCircleMaxRadius * (1 + (power - 50) * powerCircleScalePerPoint)
 ```
 
@@ -52,6 +46,6 @@ powerCircleMaxRadius = powerCircleMaxRadius * (1 + (power - 50) * powerCircleSca
 
 ## 阵容输入与验收
 
-标准比赛创建入口接受 `MatchLineups`：`blue`、`red` 各五项 `{ templateId, position: { x, y } }`。坐标单位米，以球场中心为原点；蓝队在下半场、红队在上半场。创建时检查人数、模板、队内重复、场内与己方半场、球员和皮球不重叠。未传阵容时使用首批五人和默认 `2-1-2`；赛前还可选择 `2-2-1`、`1-2-2`，双方分别保存阵型，红方坐标按球场中心旋转。赛前统一页面将阵型、五名首发和候补仓库放在同一纵向滚动内容中；仓库仅显示当前队未上场球员。普通滑动浏览，长按 0.2 秒抓起后拖入槽位替换，旧球员回仓；首发拖动交换。靠近视口上下边缘可自动滚动，轻点球员查看信息；不提供按钮换人或预选槽位。名单和阵型都经 `LineupEditor` 校验后提交同一比赛入口；本批不支持自由摆位。
+标准比赛创建入口接受 `MatchLineups`：`blue`、`red` 各五项 `{ templateId, position: { x, y } }`。坐标单位米，以球场中心为原点；蓝队在下半场、红队在上半场。创建时检查人数、模板、队内重复、场内与己方半场、球员和皮球不重叠。未传阵容时使用首批五人和默认 `2-1-2`；赛前还可选择 `2-2-1`、`1-2-2`，双方分别保存阵型，红方坐标按球场中心旋转。赛前统一页面将阵型、五名首发和候补仓库放在同一纵向滚动内容中；仓库仅显示当前队未上场球员，以四列竖卡展示头像、姓名与能力档配色；属性与技能留在详情中。普通滑动浏览，长按 0.2 秒抓起后拖入槽位替换，旧球员回仓；首发拖动交换。靠近视口上下边缘可自动滚动，轻点球员查看信息；不提供按钮换人或预选槽位。名单和阵型都经 `LineupEditor` 校验后提交同一比赛入口；本批不支持自由摆位。
 
 每次增加头像：检查原图、圆形遮罩的小尺寸效果、队色外圈、运行时加载与重开；仅增加姓名占位球员时检查四个界面的姓名可读性。每次调整属性：执行类型检查、目录与阵容测试、比赛回归，并在 Creator 预览中试玩重量与发射差异。Android 真机表现留给既定打包支线。

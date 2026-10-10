@@ -1,7 +1,7 @@
 import { Color, Graphics, Label, Mask, Node, Sprite, SpriteFrame, UITransform, isValid } from 'cc';
 import type { Vector2Data } from '../core/GameState';
 import type { PlayerCatalog, PlayerTemplate } from '../core/PlayerCatalog';
-import { getPlayerTemplate, playerSkillPresentation } from '../core/PlayerCatalog';
+import { getPlayerTemplate, playerRarityPresentation, playerSkillPresentation } from '../core/PlayerCatalog';
 
 type StatIcon = 'weight' | 'power' | 'precision' | 'mentality' | 'curve';
 const infoCloseCenter = { x: 296, y: 535 } as const;
@@ -16,6 +16,8 @@ export class PlayerInfoView {
     show(templateId: string): void {
         this.close();
         const template = getPlayerTemplate(this.catalog, templateId);
+        const [r, g, b] = playerRarityPresentation(template.rarity).rgb;
+        const rarity = new Color(r, g, b);
         const overall = this.overall(template);
         const overlay = this.node(this.root, `Info-${templateId}`, 720, 1280); overlay.setSiblingIndex(this.root.children.length - 1);
         const shade = overlay.addComponent(Graphics); shade.fillColor = new Color(3, 15, 20, 220);
@@ -23,7 +25,7 @@ export class PlayerInfoView {
 
         this.panel(overlay, 'InfoShadow', 680, 1170, 0, -9, new Color(4, 23, 29, 230), 34);
         const card = this.panel(overlay, 'InfoCard', 672, 1170, 0, 0, new Color(235, 244, 235), 32);
-        const frame = card.getComponent(Graphics)!; frame.strokeColor = new Color(58, 130, 124);
+        const frame = card.getComponent(Graphics)!; frame.strokeColor = rarity;
         frame.lineWidth = 7; frame.stroke();
 
         const header = this.panel(card, 'Header', 666, 90, 0, 535, new Color(44, 75, 88), 29);
@@ -39,18 +41,19 @@ export class PlayerInfoView {
 
         this.portraitMedallion(card, templateId, -226, 376);
         const portraitTag = this.panel(card, 'PortraitTag', 132, 42, -226, 280,
-            new Color(28, 186, 69), 18);
-        const tagBorder = portraitTag.getComponent(Graphics)!; tagBorder.strokeColor = new Color(16, 111, 45);
+            rarity, 18);
+        const tagBorder = portraitTag.getComponent(Graphics)!; tagBorder.strokeColor = new Color(38, 48, 64);
         tagBorder.lineWidth = 3; tagBorder.stroke();
-        this.label(portraitTag, '球员卡', 0, 0, 19, 118);
+        this.label(portraitTag, playerRarityPresentation(template.rarity).name, 0, 0, 19, 126);
 
         this.panel(card, 'IdentityShadow', 402, 130, 102, 388,
             new Color(182, 90, 39, 140), 18);
         const identity = this.panel(card, 'Identity', 402, 130, 102, 397,
-            new Color(247, 126, 54), 18);
+            rarity, 18);
         const identityBorder = identity.getComponent(Graphics)!; identityBorder.strokeColor = new Color(255, 207, 148);
         identityBorder.lineWidth = 3; identityBorder.stroke();
-        this.label(identity, template.name, -70, 24, 35, 220);
+        const identityName = this.label(identity, template.name, -70, 24, 35, 220);
+        identityName.overflow = Label.Overflow.SHRINK;
         this.label(identity, '五维能力档案 · 评分 0—100', -68, -23, 18, 230, new Color(255, 239, 219));
         const rating = this.panel(identity, 'Overall', 92, 96, 137, 0, new Color(194, 84, 37, 210), 14);
         this.label(rating, '综合', 0, 24, 16, 82, new Color(255, 229, 202));
@@ -60,7 +63,7 @@ export class PlayerInfoView {
         const quipBorder = quipPanel.getComponent(Graphics)!; quipBorder.strokeColor = new Color(203, 217, 205);
         quipBorder.lineWidth = 2; quipBorder.stroke();
         const quip = this.label(quipPanel, `“${template.quip}”`, 0, 0, 20, 370, new Color(38, 62, 74));
-        quip.enableWrapText = true; quip.lineHeight = 27;
+        quip.enableWrapText = true; quip.lineHeight = 27; quip.overflow = Label.Overflow.SHRINK;
         quip.node.getComponent(UITransform)?.setContentSize(370, 76);
 
         this.label(card, '能力属性', -252, 204, 23, 150, new Color(35, 80, 83));
@@ -76,16 +79,16 @@ export class PlayerInfoView {
         skillsGraphic.lineWidth = 3; skillsGraphic.stroke();
         this.skillIcon(skills, -242, 0);
         const skill = playerSkillPresentation(template);
-        this.label(skills, skill ? `【${skill.name}】` : '【专属技能】', 28, 45, 25, 430,
+        const skillTitle = this.label(skills, skill ? `【${skill.name}】` : '【专属技能】', 52, 48, 23, 420,
             new Color(226, 83, 37));
+        skillTitle.overflow = Label.Overflow.SHRINK;
         const skillText = skill
             ? skill.description
             : '技能系统尚未启用，效果与解锁条件将在后续版本确定。';
-        const placeholder = this.label(skills, skillText, 52, -2, 19, 420, new Color(44, 66, 78));
-        placeholder.enableWrapText = true; placeholder.lineHeight = 27;
-        placeholder.node.getComponent(UITransform)?.setContentSize(420, 64);
-        this.label(skills, skill ? '已启用' : '敬请期待', 218, -57, 17, 150,
-            skill ? new Color(24, 146, 58) : new Color(225, 47, 48));
+        const description = this.label(skills, skillText, 52, -25, 18, 420, new Color(44, 66, 78));
+        description.enableWrapText = true; description.lineHeight = 25;
+        description.overflow = Label.Overflow.SHRINK;
+        description.node.getComponent(UITransform)?.setContentSize(420, 82);
 
         this.pitchDecoration(card);
         this.panel(card, 'ActionShadow', 316, 72, 0, -507, new Color(13, 91, 38), 19);

@@ -2,7 +2,7 @@ import { Canvas, Camera, Color, Graphics, Label, Mask, Node, Sprite, SpriteFrame
     UITransform, Vec3, isValid } from 'cc';
 import type { Vector2Data } from '../core/GameState';
 import type { PlayerCatalog } from '../core/PlayerCatalog';
-import { getPlayerTemplate } from '../core/PlayerCatalog';
+import { getPlayerTemplate, playerRarityPresentation } from '../core/PlayerCatalog';
 import { formationDefinitions, formationPositions } from '../core/Lineup';
 import type { FormationId } from '../core/Lineup';
 import type { LineupDraftSnapshot, LineupEdit } from '../application/LineupEditor';
@@ -12,7 +12,8 @@ import { PlayerInfoView } from './PlayerInfoView';
 export const lineupInteraction = Object.freeze({
     holdSeconds: 0.2, moveTolerance: 14, edgeSize: 96, maxEdgeSpeed: 720,
     viewportTop: 470, viewportBottom: -530, viewportWidth: 692,
-    benchFirstY: -380, rowStep: 220,
+    benchFirstY: -380, rowStep: 158, benchColumns: 4, benchColumnStep: 160,
+    benchCardWidth: 150, benchCardHeight: 146,
 });
 const viewportHeight = lineupInteraction.viewportTop - lineupInteraction.viewportBottom;
 const viewportCenterY = (lineupInteraction.viewportTop + lineupInteraction.viewportBottom) / 2;
@@ -108,8 +109,9 @@ export class LineupView {
         });
         snapshot.bench.forEach((id, index) => {
             const card = this.playerCard(this.content, id, false);
-            card.setPosition(index % 2 === 0 ? -158 : 158,
-                lineupInteraction.benchFirstY - Math.floor(index / 2) * lineupInteraction.rowStep);
+            card.setPosition((index % lineupInteraction.benchColumns - (lineupInteraction.benchColumns - 1) / 2)
+                * lineupInteraction.benchColumnStep,
+                lineupInteraction.benchFirstY - Math.floor(index / lineupInteraction.benchColumns) * lineupInteraction.rowStep);
             this.benchCards.push(card);
         });
         this.targetRing.node.setSiblingIndex(this.content.children.length - 1);
@@ -212,8 +214,9 @@ export class LineupView {
         this.content.setPosition(0, -viewportCenterY + this.scrollOffset);
     }
     private maxScroll(): number {
-        const rows = Math.ceil(this.benchCards.length / 2);
-        const bottom = rows > 0 ? lineupInteraction.benchFirstY - (rows - 1) * lineupInteraction.rowStep - 120 : -280;
+        const rows = Math.ceil(this.benchCards.length / lineupInteraction.benchColumns);
+        const bottom = rows > 0 ? lineupInteraction.benchFirstY - (rows - 1) * lineupInteraction.rowStep
+            - lineupInteraction.benchCardHeight / 2 - 12 : -280;
         return Math.max(0, lineupInteraction.viewportBottom - bottom);
     }
     private insideViewport(point: Vector2Data): boolean {
@@ -230,8 +233,8 @@ export class LineupView {
         const slot = this.hitSlot(point);
         if (slot !== null) return { kind: 'slot', slot, templateId: this.snapshot[this.snapshot.side][slot] };
         const y = point.y - this.scrollOffset;
-        const index = this.benchCards.findIndex(card => Math.abs(point.x - card.position.x) <= 151
-            && Math.abs(y - card.position.y) <= 101);
+        const index = this.benchCards.findIndex(card => Math.abs(point.x - card.position.x) <= lineupInteraction.benchCardWidth / 2
+            && Math.abs(y - card.position.y) <= lineupInteraction.benchCardHeight / 2);
         return index < 0 ? undefined : { kind: 'bench', templateId: this.snapshot.bench[index] };
     }
     private hitFormation(point: Vector2Data): FormationId | null {
@@ -269,13 +272,17 @@ export class LineupView {
     }
     private playerCard(parent: Node, id: string, field: boolean): Node {
         const template = getPlayerTemplate(this.catalog, id); const frame = this.portraits.get(id);
-        const width = field ? 120 : 302; const height = field ? 108 : 202;
+        const width = field ? 120 : lineupInteraction.benchCardWidth;
+        const height = field ? 108 : lineupInteraction.benchCardHeight;
         const card = this.panel(parent, 'Card-' + id, width, height, 0, 0,
-            field ? new Color(11, 42, 54, 240) : new Color(225, 239, 225), 18);
-        const g = card.getComponent(Graphics)!; g.strokeColor = field ? new Color(194, 236, 229) : new Color(75, 143, 135);
-        g.lineWidth = 2; g.stroke();
-        const size = field ? 68 : 84;
-        const avatar = this.node(card, 'Avatar', size, size); avatar.setPosition(field ? 0 : -92, field ? 15 : 42);
+            field ? new Color(11, 42, 54, 240) : new Color(29, 42, 59), 18);
+        const [r, green, b] = playerRarityPresentation(template.rarity).rgb;
+        const rarity = new Color(r, green, b);
+        const g = card.getComponent(Graphics)!; g.strokeColor = rarity;
+        g.lineWidth = field ? 4 : 2.5; g.stroke();
+        if (!field) this.panel(card, 'TierAccent', 72, 4, 0, 68, rarity, 2);
+        const size = field ? 68 : 86;
+        const avatar = this.node(card, 'Avatar', size, size); avatar.setPosition(0, field ? 15 : 13);
         if (frame) {
             const mask = avatar.addComponent(Mask); mask.type = Mask.Type.GRAPHICS_ELLIPSE; mask.segments = 32;
             const image = this.node(avatar, 'Image', size, size);
@@ -285,15 +292,9 @@ export class LineupView {
             art.circle(0, 0, size / 2); art.fill();
             this.label(avatar, template.name, 0, 0, template.name.length > 4 ? 13 : 16, size - 8);
         }
-        this.label(card, template.name, field ? 0 : 48, field ? -34 : 68, field ? 18 : 25, field ? 114 : 170,
-            field ? new Color(233, 247, 246) : new Color(26, 70, 69));
-        if (!field) {
-            const ink = new Color(63, 96, 88);
-            this.label(card, '重 ' + template.weight + '  力 ' + template.power, 48, 33, 17, 180, ink);
-            this.label(card, '准 ' + template.precision + '  心 ' + template.mentality + '  弧 ' + template.curve,
-                48, 6, 16, 190, ink);
-            this.label(card, '轻点查看 · 长按拖动', 0, -66, 18, 280, ink);
-        }
+        const name = this.label(card, template.name, 0, field ? -34 : -49, 18, field ? 114 : 136,
+            new Color(240, 244, 248));
+        name.overflow = Label.Overflow.SHRINK;
         return card;
     }
     private button(x: number, y: number, width: number, name: string, color: Color): Node {
