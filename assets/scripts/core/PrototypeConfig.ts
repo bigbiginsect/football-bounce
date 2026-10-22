@@ -1,11 +1,11 @@
-import type { GameState, PlayerState } from './GameState';
+import type { ConditionSession, GameState, PlayerState } from './GameState';
 import type { PlayerCatalog } from './PlayerCatalog';
 import type { MatchLineups } from './Lineup';
 import { defaultLineups, validateLineups } from './Lineup';
 
 /** 阶段 1 物理基线与阶段 2 标准模式参数。修改后停止并重新运行预览，同时更新 version。 */
 export const prototypeConfig = {
-    version: 'stage3-004',
+    version: 'stage3-005',
     fieldWidth: 6.8, fieldHeight: 10.5, wallThickness: 0.25,
     goalWidth: 2.4, goalDepth: 0.6,
     playerRadius: 0.30, ballRadius: 0.15,
@@ -102,7 +102,8 @@ export function createPrototypeState(matchId: string, config: PrototypeConfig, f
             ? { x: config.fieldWidth / 2 - config.ballRadius,
                 y: fixture === 'corner' ? config.fieldHeight / 2 - config.ballRadius : 0 }
             : { x: 0, y: -0.25 }, pending: false };
-    return { schemaVersion: 5, revision: 0, matchId, modeId: 'practice', configVersion: config.version,
+    return { schemaVersion: 6, conditions: { seed: 0, randomState: 0, values: {} },
+        revision: 0, matchId, modeId: 'practice', configVersion: config.version,
         catalogVersion: 'practice-fixture',
         turnNumber: 1, phase: 'Aiming', activeOperatorId: 'a',
         clock: { matchDurationMs: config.matchSeconds * 1000, elapsedMs: 0,
@@ -128,7 +129,8 @@ export function randomValue(state: number): number {
 
 /** 标准模式比赛。种子由组合层注入，随机推进及先手决定留在纯规则层。 */
 export function createStandardMatchState(matchId: string, config: PrototypeConfig, seed: number,
-    catalog: PlayerCatalog, selections: MatchLineups = defaultLineups()): GameState {
+    catalog: PlayerCatalog, selections: MatchLineups = defaultLineups(),
+    conditions: ConditionSession = { seed: 0, randomState: 0, values: {} }): GameState {
     if (!Number.isSafeInteger(seed) || seed < 0 || seed > 0xffffffff) throw new Error('随机种子必须是 uint32');
     const normalizedSeed = (seed >>> 0) || 0x6d2b79f5;
     const randomState = nextRandomState(normalizedSeed);
@@ -139,6 +141,8 @@ export function createStandardMatchState(matchId: string, config: PrototypeConfi
         const template = catalog.players.find(item => item.id === selection.templateId)!;
         return { ...body(selection.position.x, selection.position.y), instanceId: `${ownerId}-${index + 1}`,
             templateId: selection.templateId, ownerId,
+            attributes: { weight: template.weight, power: template.power, precision: template.precision,
+                mentality: template.mentality, curve: template.curve },
             ...(template.skill ? { skill: { id: template.skill.id, params: { ...template.skill.params } } } : {}) };
     };
     const players = [...lineups.blue.map((selection, index) => player('blue', selection, index)),
@@ -147,7 +151,11 @@ export function createStandardMatchState(matchId: string, config: PrototypeConfi
         ballPosition: { x: 0, y: 0 }, pending: true };
     const matchDurationMs = config.matchSeconds * 1000;
     const turnDurationMs = config.aimingSeconds * 1000;
-    return { schemaVersion: 5, revision: 0, matchId, modeId: 'standard', configVersion: config.version,
+    if (![conditions.seed, conditions.randomState].every(value => Number.isSafeInteger(value) && value >= 0 && value <= 0xffffffff)
+        || Object.keys(conditions.values).some(id => !catalog.players.some(p => p.id === id)
+            || ['up', 'normal', 'down'].indexOf(conditions.values[id]) < 0)) throw new Error('启动状态记录无效');
+    return { schemaVersion: 6, conditions: { ...conditions, values: { ...conditions.values } },
+        revision: 0, matchId, modeId: 'standard', configVersion: config.version,
         catalogVersion: catalog.version,
         turnNumber: 1, phase: 'Aiming', activeOperatorId: firstOperatorId,
         clock: { matchDurationMs, elapsedMs: 0, remainingMs: matchDurationMs,

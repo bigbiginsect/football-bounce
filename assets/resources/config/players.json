@@ -1,5 +1,5 @@
 {
-  "version": "players-006",
+  "version": "players-007",
   "players": [
     {
       "id": "messi",
@@ -390,6 +390,42 @@
       "weight": 58,
       "curve": 68,
       "name": "里科·刘易斯"
+    },
+    {
+      "id": "zidane",
+      "name": "齐祖（齐达内）",
+      "rarity": "red",
+      "weight": 78,
+      "power": 88,
+      "precision": 97,
+      "mentality": 96,
+      "curve": 96,
+      "quip": "抬头看一眼，整个半场都在掌握。",
+      "skill": {
+        "id": "half-all-aura",
+        "name": "大师领域",
+        "params": {
+          "percent": 0.1
+        }
+      }
+    },
+    {
+      "id": "toni-kroos",
+      "name": "甜菜（克罗斯）",
+      "rarity": "gold",
+      "weight": 73,
+      "power": 87,
+      "precision": 98,
+      "mentality": 98,
+      "curve": 93,
+      "quip": "传向哪里，比赛就走向哪里。",
+      "skill": {
+        "id": "half-playmaker-aura",
+        "name": "节拍掌控",
+        "params": {
+          "percent": 0.1
+        }
+      }
     }
   ]
 }

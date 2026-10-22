@@ -67,6 +67,8 @@ function lineupGestureFixture() {
   view.info = { isOpen: false, closeCount: 0, show(id) { this.isOpen = true; this.id = id; },
     close() { this.isOpen = false; this.closeCount++; }, dispose() { this.close(); },
     hitClose: PlayerInfoView.prototype.hitClose };
+  view.catalog = catalog;
+  view.conditions = { seed: 0, randomState: 0, values: {} };
   const edits = [];
   view.submit = edit => { edits.push(edit); if (editor.execute(edit)) view.setDraft(editor.getSnapshot()); };
   view.setDraft(editor.getSnapshot());
@@ -622,13 +624,17 @@ test('实际统一视图构造仅创建一个滚动页，首发与候补分开�
   cc.Mask = class { static Type = { GRAPHICS_RECT: 1, GRAPHICS_ELLIPSE: 2 }; };
   cc.Sprite = class { static SizeMode = { CUSTOM: 1 }; };
   cc.Label = class { static HorizontalAlign = { CENTER: 1 }; static VerticalAlign = { CENTER: 1 }; static Overflow = { SHRINK: 1 }; };
-  cc.Graphics = class { clear() {} circle() {} rect() {} roundRect() {} fill() {} stroke() {} moveTo() {} lineTo() {} };
+  cc.Graphics = class { clear() {} circle() {} rect() {} roundRect() {} fill() {}
+    stroke() { (this.strokes ??= []).push({ color: this.strokeColor, end: this.end }); }
+    moveTo() {} lineTo(x, y) { this.end = { x, y }; } };
   const parent = new UiNode('Canvas'); parent.addComponent(cc.UITransform).setContentSize(720, 1280);
   parent.addComponent(cc.Canvas).cameraComponent = { screenToWorld: point => point };
   const editor = new LineupEditor(catalog, config);
+  const conditions = { seed: 11, randomState: 12,
+    values: Object.fromEntries(catalog.players.map(player => [player.id, 'up'])) };
   const view = new LineupView(parent, catalog, new Map(), edit => {
     if (editor.execute(edit)) view.setDraft(editor.getSnapshot());
-  });
+  }, conditions);
   view.setDraft(editor.getSnapshot());
   assert.equal(parent.children.length, 1);
   const viewport = view.root.children.find(node => node.name === 'LineupViewport');
@@ -638,6 +644,7 @@ test('实际统一视图构造仅创建一个滚动页，首发与候补分开�
   const labels = node => node.components.filter(item => typeof item.string === 'string')
     .map(item => item.string).concat(node.children.flatMap(labels));
   const pageText = labels(view.root);
+  assert.ok(view.benchCards[0].children.some(node => node.name === 'ConditionBadge'));
   assert.ok(!pageText.includes('上场') && !pageText.includes('返回仓库'));
   assert.deepEqual(view.benchCards[0].getComponent(cc.UITransform).size, { width: 150, height: 146 });
   const rarityRgb = load('assets/scripts/core/PlayerCatalog.ts').playerRarityPresentation(
@@ -659,6 +666,42 @@ test('实际统一视图构造仅创建一个滚动页，首发与候补分开�
   assert.ok(!labels(view.info.infoPanel).includes('已启用'));
   view.touchStart(2, { x: 296, y: 535 }); view.touchEnd(2, { x: 296, y: 535 });
   assert.equal(view.info.isOpen, false);
+  view.info.show('toni-kroos', 'up');
+  const conditionNodes = nodes(view.info.infoPanel);
+  const precisionTile = conditionNodes.find(node => node.name === 'Stat-精准');
+  assert.ok(labels(precisionTile).includes('118'));
+  const deltaLabel = nodes(precisionTile).flatMap(node => node.components).find(item => item.string === '（+20）');
+  assert.ok(deltaLabel); assert.ok(deltaLabel.color.g > deltaLabel.color.r);
+  assert.equal(precisionTile.children.filter(node => node.name.startsWith('Crystal-')).length, 5);
+  const endpoint = precisionTile.children.find(node => node.name === 'Crystal-4').getComponent(cc.Graphics).strokes[0].color;
+  assert.ok(endpoint.r > endpoint.g);
+  assert.ok(labels(view.info.infoPanel).includes('状态上扬'));
+  assert.ok(conditionNodes.some(node => node.name === 'ConditionBadge'));
+  assert.ok(labels(view.info.infoPanel).includes('心理'));
+  view.info.show('toni-kroos', 'down');
+  assert.ok(labels(view.info.infoPanel).includes('状态低迷'));
+  assert.ok(labels(view.info.infoPanel).includes('（-20）'));
+  view.info.show('toni-kroos', 'normal');
+  assert.ok(!nodes(view.info.infoPanel).some(node => node.name === 'ConditionBadge'));
+  const samples = new UiNode('AttributeSamples');
+  for (const [value, reached, lineEnd] of [[0, 0, 144], [60, 3, 80], [75, 3, 104], [80, 4, 112], [100, 5, 144], [118, 5, 144]]) {
+    view.info.stat(samples, 'sample', value, 0, 0, 'power');
+    const tile = samples.children.at(-1);
+    const crystals = tile.children.filter(node => node.name.startsWith('Crystal-'));
+    assert.equal(crystals.length, 5);
+    assert.deepEqual(crystals[0].getComponent(cc.UITransform).size, { width: 18, height: 18 });
+    assert.deepEqual(crystals.map(node => node.position.x), [-41, -9, 23, 55, 87]);
+    crystals.forEach((node, index) => {
+      const color = node.getComponent(cc.Graphics).strokes[0].color;
+      assert.equal(color.r === Math.round(204 * .72) && color.g === Math.round(211 * .72), index >= reached);
+    });
+    const track = tile.children.find(node => node.name === 'CrystalTrack').getComponent(cc.Graphics);
+    assert.equal(track.lineWidth, 4.5);
+    const strokes = track.strokes;
+    assert.equal(strokes.at(-1).end.x, lineEnd);
+    if (value === 0) assert.equal(strokes.length, 1);
+    else if (value >= 60) assert.notDeepEqual(strokes[1].color, strokes.at(-1).color);
+  }
   view.dispose(); view.dispose(); assert.equal(view.root.destroying, true);
 });
 

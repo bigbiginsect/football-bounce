@@ -5,6 +5,7 @@ import type { PhysicsFrame, PhysicsPort } from '../core/PhysicsPort';
 import { detectGoal, freezeConfig, nextRandomState, PrototypeConfig, randomValue } from '../core/PrototypeConfig';
 import { isPlayablePosition } from '../core/BoundaryGeometry';
 import { AIM_WOBBLE_SKILL, BALL_HIT_ENCORE_SKILL, effectiveAimDirection, skillNumber } from '../core/PlayerSkills';
+import { conditionPowerMultiplier } from '../core/PlayerCatalog';
 
 function copy<T>(value: T): T { return JSON.parse(JSON.stringify(value)) as T; }
 export type CommandResult = { readonly ok: true; readonly revision: number }
@@ -27,6 +28,7 @@ export class LocalMatch {
     private endReason: EndReason = 'ready';
 
     constructor(initialState: GameState, private readonly physics?: PhysicsPort, config?: PrototypeConfig) {
+        if (initialState.schemaVersion !== 6) throw new Error('比赛快照版本不兼容，请重新开始比赛');
         this.state = copy(initialState);
         this.endReason = initialState.phase === 'Finished' ? 'finished'
             : initialState.phase === 'Simulating' ? 'moving' : 'ready';
@@ -66,8 +68,10 @@ export class LocalMatch {
                 const frame = this.physics.sample();
                 if (!this.validFrame(frame)) { this.finishSimulation('invalid'); break; }
                 this.state = { ...this.state, revision: this.state.revision + 1,
-                    players: this.state.players.map(player => ({ ...player,
-                        ...copy(frame.players.find(p => p.instanceId === player.instanceId)!) })),
+                    players: this.state.players.map(player => {
+                        const body = frame.players.find(p => p.instanceId === player.instanceId)!;
+                        return { ...player, position: copy(body.position), velocity: copy(body.velocity) };
+                    }),
                     ball: copy(frame.ball) };
                 this.recordSkillContacts(frame.ballPlayerContacts ?? []);
                 const scorer = frame.goal === 'top' ? 'blue' : frame.goal === 'bottom' ? 'red' : null;
@@ -300,7 +304,8 @@ export class LocalMatch {
         this.accumulator = 0; this.steps = 0; this.quietSteps = 0; this.droppedSeconds = 0;
         this.endReason = 'moving';
         if (this.physics) {
-            try { this.physics.launch({ ...command, direction: launchDirection }, burstMultiplier); }
+            try { this.physics.launch({ ...command, direction: launchDirection }, burstMultiplier
+                * conditionPowerMultiplier(player, this.state, this.config!)); }
             catch { this.finishSimulation('invalid'); }
         }
         this.recordSnapshot();

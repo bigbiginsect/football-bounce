@@ -1,4 +1,5 @@
 import type { PrototypeConfig } from './PrototypeConfig';
+import type { ConditionSession, GameState, PlayerAttributes, PlayerCondition, PlayerState } from './GameState';
 
 export interface PlayerTemplate {
     readonly id: string;
@@ -9,9 +10,9 @@ export interface PlayerTemplate {
     readonly weight: number;
     readonly power: number;
     readonly precision: number;
-    /** 展示用设计评分；规则效果尚未启用。 */
+    /** 心理决定启动时抽取红/无/绿状态的概率，本身不受状态和半场技能影响。 */
     readonly mentality: number;
-    /** 展示用设计评分；规则效果尚未启用。 */
+    /** 状态/半场技能会改变评分；弧线发射物理尚未启用。 */
     readonly curve: number;
     readonly quip: string;
     readonly skill?: { readonly id: string; readonly name?: string;
@@ -106,7 +107,13 @@ export function parsePlayerCatalog(input: unknown): PlayerCatalog {
                     throw new Error(`球员 ${entry.id} 的被动技能参数无效`);
                 }
             }
-            if (['aim-wobble', 'ball-hit-encore', 'power-burst', 'aim-boost', 'mass-boost'].indexOf(entry.skill.id) < 0) {
+            if (entry.skill.id === 'half-all-aura' || entry.skill.id === 'half-playmaker-aura') {
+                if (typeof params.percent !== 'number' || params.percent <= 0 || params.percent > 0.5) {
+                    throw new Error(`球员 ${entry.id} 的半场技能参数无效`);
+                }
+            }
+            if (['aim-wobble', 'ball-hit-encore', 'power-burst', 'aim-boost', 'mass-boost',
+                'half-all-aura', 'half-playmaker-aura'].indexOf(entry.skill.id) < 0) {
                 throw new Error(`球员 ${entry.id} 的技能 ID 无效`);
             }
             skill = Object.freeze({ id: entry.skill.id,
@@ -123,6 +130,11 @@ export function parsePlayerCatalog(input: unknown): PlayerCatalog {
 
 export function playerSkillPresentation(template: PlayerTemplate): PlayerSkillPresentation | null {
     const skillName = template.skill?.name;
+    if (template.skill?.id === 'half-all-aura' || template.skill?.id === 'half-playmaker-aura') {
+        const stats = template.skill.id === 'half-all-aura' ? '力量、精准、弧度' : '力量、精准';
+        const percent = Math.round(Number(template.skill.params.percent) * 100);
+        return { name: skillName ?? '中场指挥', description: `本人在己方半场时，本队场上全员${stats}提升${percent}%；进入对方半场则使对手场上全员对应属性降低${percent}%。重量与心理不变。` };
+    }
     if (template.skill?.id === 'aim-wobble') {
         const chance = Number(template.skill.params.chance);
         const amplitude = Number(template.skill.params.amplitudeDegrees);
@@ -145,6 +157,83 @@ export function getPlayerTemplate(catalog: PlayerCatalog, id: string): PlayerTem
     const player = catalog.players.find(entry => entry.id === id);
     if (!player) throw new Error(`未知球员模板：${id}`);
     return player;
+}
+
+/** 暂定概率配置；保持中性概率不变，心理只在红色和绿色之间转移概率。 */
+export const mentalityConditionConfig = Object.freeze({ neutralChance: 0.3,
+    minimumUpChance: 0.1, maximumUpChance: 0.6, attributeChange: 0.2 });
+
+export function conditionProbabilities(mentality: number) {
+    if (!Number.isInteger(mentality) || mentality < 0 || mentality > 100) throw new Error('心理评分必须为0—100整数');
+    const c = mentalityConditionConfig;
+    const up = c.minimumUpChance + (c.maximumUpChance - c.minimumUpChance) * mentality / 100;
+    return { up, normal: c.neutralChance, down: 1 - c.neutralChance - up };
+}
+
+/** 启动种子由组合层提供；记录每个模板的抽签结果，两队使用同模板时状态相同。 */
+export function createPlayerConditions(catalog: PlayerCatalog, seed: number): ConditionSession {
+    if (!Number.isSafeInteger(seed) || seed < 0 || seed > 0xffffffff) throw new Error('状态种子必须是uint32');
+    let randomState = seed;
+    const values: Record<string, PlayerCondition> = {};
+    for (const player of catalog.players) {
+        randomState = (randomState + 0x6d2b79f5) >>> 0;
+        let value = Math.imul(randomState ^ (randomState >>> 15), randomState | 1);
+        value ^= value + Math.imul(value ^ (value >>> 7), value | 61);
+        const roll = ((value ^ (value >>> 14)) >>> 0) / 0x100000000;
+        const chances = conditionProbabilities(player.mentality);
+        values[player.id] = roll < chances.up ? 'up' : roll < chances.up + chances.normal ? 'normal' : 'down';
+    }
+    return { seed, randomState, values };
+}
+
+export function conditionPresentation(condition: PlayerCondition) {
+    return condition === 'up' ? { arrow: '↑', name: '状态上扬', rgb: [225, 58, 66] as const }
+        : condition === 'down' ? { arrow: '↓', name: '状态低迷', rgb: [32, 165, 73] as const }
+        : { arrow: '', name: '状态平稳', rgb: [100, 121, 132] as const };
+}
+
+/** 每个影响都相对基础评分相加，最后一次取整；重量/心理不进入加成循环。 */
+export function effectiveAttributes(base: PlayerAttributes, condition: PlayerCondition = 'normal',
+    aura: Readonly<Partial<Record<'power' | 'precision' | 'curve', number>>> = {}): PlayerAttributes {
+    const change = condition === 'up' ? mentalityConditionConfig.attributeChange
+        : condition === 'down' ? -mentalityConditionConfig.attributeChange : 0;
+    const adjusted = (key: 'power' | 'precision' | 'curve') =>
+        Math.max(0, Math.round(base[key] * (1 + change + (aura[key] ?? 0))));
+    return { weight: base.weight, mentality: base.mentality,
+        power: adjusted('power'), precision: adjusted('precision'), curve: adjusted('curve') };
+}
+
+/** 纯数据位置判定，蓝队下半场/红队上半场；中线归本人己方半场。 */
+export function playerAuraBonuses(target: PlayerState, state: Pick<GameState, 'players'>) {
+    const result = { power: 0, precision: 0, curve: 0 };
+    for (const source of state.players) {
+        if (source.skill?.id !== 'half-all-aura' && source.skill?.id !== 'half-playmaker-aura') continue;
+        const ownHalf = source.ownerId === 'blue' ? source.position.y <= 0 : source.position.y >= 0;
+        const sameTeam = source.ownerId === target.ownerId;
+        if (ownHalf !== sameTeam) continue;
+        const amount = Number(source.skill.params.percent) * (ownHalf ? 1 : -1);
+        result.power += amount; result.precision += amount;
+        if (source.skill.id === 'half-all-aura') result.curve += amount;
+    }
+    return result;
+}
+
+export function matchPlayerAttributes(player: PlayerState, state: GameState): PlayerAttributes | undefined {
+    return player.attributes ? effectiveAttributes(player.attributes,
+        state.conditions.values[player.templateId] ?? 'normal', playerAuraBonuses(player, state)) : undefined;
+}
+
+export function matchPlayerTemplate(template: PlayerTemplate, player: PlayerState, state: GameState): PlayerTemplate {
+    const attributes = matchPlayerAttributes(player, state);
+    return attributes ? { ...template, ...attributes } : template;
+}
+
+/** 传给物理的是相对基础冲量的权威倍率；保留质量补偿与已有强力发射机制。 */
+export function conditionPowerMultiplier(player: PlayerState, state: GameState, config: PrototypeConfig): number {
+    const attributes = matchPlayerAttributes(player, state);
+    if (!attributes || !player.attributes) return 1;
+    return (1 + (attributes.power - 50) * config.powerSpeedScalePerPoint)
+        / (1 + (player.attributes.power - 50) * config.powerSpeedScalePerPoint);
 }
 
 /**
