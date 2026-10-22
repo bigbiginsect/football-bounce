@@ -39,11 +39,14 @@ export class PrototypeView {
         if (!camera) throw new Error('球场视图需要 Canvas 的渲染相机');
         this.camera = camera;
         this.root = this.node(parent, 'Match', 720, 1280);
-        this.label(this.root, '足球弹弹乐 · 本地双人', 603, 30);
-        this.label(this.root, '拖动当前行动方球员，向相反方向发射', 563, 19);
-        const hud = this.panel(this.root, 'MatchHud', 640, 104, 0, 492, new Color(15, 31, 45, 225), 20);
-        this.score = this.label(hud, '', 22, 29);
-        this.clock = this.label(hud, '', -22, 21);
+        this.headerLabel(this.root, '足球弹弹乐 · 本地双人', 617, 28, 36);
+        this.headerLabel(this.root, '拖动当前行动方球员，向相反方向发射', 584, 18, 26);
+        // 顶部门框最高为 (fieldHeight / 2 + goalDepth) * 80 = 468。
+        // 信息栏下沿放在 480，比分、计时和状态各占一行，避免门框穿过文字。
+        const hud = this.panel(this.root, 'MatchHud', 640, 88, 0, 524, new Color(15, 31, 45, 225), 20);
+        this.score = this.headerLabel(hud, '', 27, 26, 30);
+        this.clock = this.headerLabel(hud, '', -2, 20, 26);
+        this.status = this.headerLabel(hud, '', -29, 19, 24);
         const field = this.node(this.root, 'Field', config.fieldWidth * pixelsPerMeter, config.fieldHeight * pixelsPerMeter);
         this.field = field.getComponent(UITransform)!;
         const g = field.addComponent(Graphics);
@@ -65,7 +68,6 @@ export class PrototypeView {
         this.bodies = this.node(field, 'Bodies', w, h).addComponent(Graphics);
         this.portraitLayer = this.node(field, 'Portraits', w, h);
         this.aim = this.node(field, 'Aim', w, h).addComponent(Graphics);
-        this.status = this.label(this.root, '', 431, 21);
         this.info = this.label(this.root, '', -478, 19);
         this.activeRestartButton = this.button(this.root, '重新开始', 0, -550, restart, 250);
 
@@ -168,6 +170,15 @@ export class PrototypeView {
         const label = node.addComponent(Label); label.string = text; label.fontSize = size;
         label.lineHeight = size + 8; label.horizontalAlign = Label.HorizontalAlign.CENTER;
         label.verticalAlign = Label.VerticalAlign.CENTER; label.color = new Color(235, 244, 242);
+        return label;
+    }
+    private headerLabel(parent: Node, text: string, y: number, size: number, height: number): Label {
+        const label = this.label(parent, text, y, size);
+        label.node.getComponent(UITransform)!.setContentSize(
+            parent.getComponent(UITransform)!.width - 24, height);
+        label.lineHeight = size + 4;
+        // 长技能/力度提示保持在自己的行内，不换行压住计时或球门。
+        label.enableWrapText = false; label.overflow = Label.Overflow.SHRINK;
         return label;
     }
     private button(parent: Node, text: string, x: number, y: number, action: () => void, width: number): Node {
