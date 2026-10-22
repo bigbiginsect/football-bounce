@@ -52,7 +52,7 @@ function fixedSteps(match, count, step = config.fixedStep) {
 
 test('标准模式创建 5v5，模式局时和瞄准时限来自配置，开局位置无重叠', () => {
   const state = createStandardMatchState('m', config, 42, catalog);
-  assert.equal(state.schemaVersion, 5);
+  assert.equal(state.schemaVersion, 6);
   assert.equal(state.catalogVersion, catalog.version);
   assert.equal(state.modeId, 'standard');
   assert.equal(config.playerRadius, 0.30);

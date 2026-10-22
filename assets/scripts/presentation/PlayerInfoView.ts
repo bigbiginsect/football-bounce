@@ -1,11 +1,42 @@
 import { Color, Graphics, Label, Mask, Node, Sprite, SpriteFrame, UITransform, isValid } from 'cc';
-import type { Vector2Data } from '../core/GameState';
-import type { PlayerCatalog, PlayerTemplate } from '../core/PlayerCatalog';
-import { getPlayerTemplate, playerRarityPresentation, playerSkillPresentation } from '../core/PlayerCatalog';
+import type { PlayerAttributes, PlayerCondition, Vector2Data } from '../core/GameState';
+import type { PlayerCatalog } from '../core/PlayerCatalog';
+import { conditionPresentation, effectiveAttributes, getPlayerTemplate, playerRarityPresentation, playerSkillPresentation } from '../core/PlayerCatalog';
 
 type StatIcon = 'weight' | 'power' | 'precision' | 'mentality' | 'curve';
 const infoCloseCenter = { x: 296, y: 535 } as const;
 const infoFooterCenter = { x: 0, y: -500 } as const;
+const crystalColors = [[49, 192, 113], [46, 174, 226], [153, 104, 222],
+    [237, 174, 59], [230, 67, 80]] as const;
+
+/** 卡片、详情与比赛共用的切面箭头徽章；平稳状态不绘制图标。 */
+export function drawConditionBadge(g: Graphics, condition: PlayerCondition, x: number, y: number, size: number): void {
+    if (condition === 'normal') return;
+    const [r, green, b] = conditionPresentation(condition).rgb;
+    const half = size / 2; const sign = condition === 'up' ? 1 : -1;
+    g.fillColor = new Color(4, 12, 21, 100);
+    g.roundRect(x - half, y - size * 0.57 - 2, size, size * 1.14, size * 0.25); g.fill();
+    g.fillColor = new Color(24, 35, 47, 248);
+    g.roundRect(x - half, y - size * 0.57, size, size * 1.14, size * 0.25); g.fill();
+    g.strokeColor = new Color(r, green, b, 220); g.lineWidth = Math.max(1, size * 0.045); g.stroke();
+    const polygon = (points: readonly (readonly [number, number])[], color: Color): void => {
+        g.fillColor = color;
+        points.forEach(([px, py], index) => {
+            if (index === 0) g.moveTo(x + px * size, y + py * size * sign);
+            else g.lineTo(x + px * size, y + py * size * sign);
+        });
+        g.lineTo(x + points[0][0] * size, y + points[0][1] * size * sign); g.fill();
+    };
+    polygon([[-0.31, 0.06], [0, 0.37], [0.31, 0.06], [0.12, 0.06],
+        [0.12, -0.34], [-0.12, -0.34], [-0.12, 0.06]], new Color(r, green, b));
+    polygon([[-0.31, 0.06], [0, 0.37], [0, -0.34], [-0.12, -0.34], [-0.12, 0.06]],
+        new Color(Math.min(255, r + 52), Math.min(255, green + 62), Math.min(255, b + 60)));
+    polygon([[0, 0.37], [0.31, 0.06], [0.12, 0.06], [0.12, -0.34], [0, -0.34]],
+        new Color(Math.round(r * 0.78), Math.round(green * 0.78), Math.round(b * 0.78)));
+    g.strokeColor = new Color(255, 255, 255, 185); g.lineWidth = Math.max(1, size * 0.04);
+    g.moveTo(x - size * 0.22, y + size * 0.08 * sign);
+    g.lineTo(x, y + size * 0.3 * sign); g.stroke();
+}
 
 /** 信息卡复用原视觉；不处理阵容命令或页面导航。 */
 export class PlayerInfoView {
@@ -13,12 +44,14 @@ export class PlayerInfoView {
     constructor(private readonly root: Node, private readonly catalog: PlayerCatalog,
         private readonly portraits: ReadonlyMap<string, SpriteFrame>) {}
     get isOpen(): boolean { return Boolean(this.infoPanel); }
-    show(templateId: string): void {
+    show(templateId: string, condition: PlayerCondition = 'normal',
+        aura: Readonly<Partial<Record<'power' | 'precision' | 'curve', number>>> = {}): void {
         this.close();
         const template = getPlayerTemplate(this.catalog, templateId);
+        const values = effectiveAttributes(template, condition, aura);
         const [r, g, b] = playerRarityPresentation(template.rarity).rgb;
         const rarity = new Color(r, g, b);
-        const overall = this.overall(template);
+        const overall = this.overall(values);
         const overlay = this.node(this.root, `Info-${templateId}`, 720, 1280); overlay.setSiblingIndex(this.root.children.length - 1);
         const shade = overlay.addComponent(Graphics); shade.fillColor = new Color(3, 15, 20, 220);
         shade.rect(-360, -640, 720, 1280); shade.fill();
@@ -54,7 +87,7 @@ export class PlayerInfoView {
         identityBorder.lineWidth = 3; identityBorder.stroke();
         const identityName = this.label(identity, template.name, -70, 24, 35, 220);
         identityName.overflow = Label.Overflow.SHRINK;
-        this.label(identity, '五维能力档案 · 评分 0—100', -68, -23, 18, 230, new Color(255, 239, 219));
+        this.label(identity, '基础评分 0—100 · 状态可突破', -68, -23, 16, 230, new Color(255, 239, 219));
         const rating = this.panel(identity, 'Overall', 92, 96, 137, 0, new Color(194, 84, 37, 210), 14);
         this.label(rating, '综合', 0, 24, 16, 82, new Color(255, 229, 202));
         this.label(rating, String(overall), 0, -15, 34, 82);
@@ -67,12 +100,22 @@ export class PlayerInfoView {
         quip.node.getComponent(UITransform)?.setContentSize(370, 76);
 
         this.label(card, '能力属性', -252, 204, 23, 150, new Color(35, 80, 83));
-        this.label(card, '评分范围 0—100', 220, 204, 16, 190, new Color(102, 128, 122));
+        this.label(card, '属性条在100封顶', 220, 204, 16, 190, new Color(102, 128, 122));
         this.stat(card, '重量', template.weight, -157, 132, 'weight');
-        this.stat(card, '力量', template.power, 157, 132, 'power');
-        this.stat(card, '精准', template.precision, -157, 16, 'precision');
-        this.stat(card, '弧度', template.curve, 157, 16, 'curve');
-        this.stat(card, '心态', template.mentality, -157, -100, 'mentality');
+        this.stat(card, '力量', values.power, 157, 132, 'power', template.power);
+        this.stat(card, '精准', values.precision, -157, 16, 'precision', template.precision);
+        this.stat(card, '弧度', values.curve, 157, 16, 'curve', template.curve);
+        this.stat(card, '心理', template.mentality, -157, -100, 'mentality');
+        const mental = this.panel(card, 'Condition', 296, 106, 157, -100, new Color(250, 253, 249), 16);
+        const status = conditionPresentation(condition); const [sr, sg, sb] = status.rgb;
+        if (condition !== 'normal') {
+            const badge = this.node(mental, 'ConditionBadge', 34, 42); badge.setPosition(-102, 22);
+            drawConditionBadge(badge.addComponent(Graphics), condition, 0, 0, 32);
+        }
+        this.label(mental, status.name, condition === 'normal' ? 0 : 20, 23, 24, 218, new Color(sr, sg, sb));
+        this.label(mental, condition === 'normal' ? '属性不变' : `力量 / 精准 / 弧度 ${condition === 'up' ? '+20%' : '-20%'}`,
+            0, -11, 16, 280, new Color(50, 78, 86));
+        this.label(mental, '本次启动固定 · 重量/心理不变', 0, -36, 13, 280, new Color(92, 111, 119));
 
         const skills = this.panel(card, 'Skills', 628, 164, 0, -246, new Color(250, 252, 246), 19);
         const skillsGraphic = skills.getComponent(Graphics)!; skillsGraphic.strokeColor = new Color(147, 174, 156);
@@ -104,26 +147,76 @@ export class PlayerInfoView {
         this.infoPanel = undefined;
     }
 
-    private overall(template: PlayerTemplate): number {
+    private overall(template: PlayerAttributes): number {
         return Math.round((template.weight + template.power + template.precision
             + template.mentality + template.curve) / 5);
     }
 
-    private stat(parent: Node, name: string, value: number, x: number, y: number, icon: StatIcon): void {
+    private stat(parent: Node, name: string, value: number, x: number, y: number, icon: StatIcon, base = value): void {
         this.panel(parent, `StatShadow-${name}`, 296, 106, x, y - 3, new Color(167, 185, 178, 150), 16);
         const tile = this.panel(parent, `Stat-${name}`, 296, 106, x, y, new Color(250, 253, 249), 16);
         const g = tile.getComponent(Graphics)!; g.strokeColor = new Color(211, 223, 217); g.lineWidth = 2; g.stroke();
         this.statIcon(tile, icon, -111, 14);
-        this.label(tile, name, -43, 27, 21, 96, new Color(34, 59, 73));
-        this.label(tile, String(value), 106, 27, 29, 62, new Color(22, 111, 43));
-        const filled = Math.max(0, Math.min(8, Math.round(value / 12.5)));
-        for (let index = 0; index < 8; index++) {
-            const color = index < filled ? new Color(39, 216, 70) : new Color(166, 177, 187);
-            const segment = this.panel(tile, `Segment-${index}`, 21, 15, -61 + index * 25, -27, color, 4);
-            const segmentGraphic = segment.getComponent(Graphics)!;
-            segmentGraphic.strokeColor = index < filled ? new Color(16, 164, 45) : new Color(126, 138, 150);
-            segmentGraphic.lineWidth = 1; segmentGraphic.stroke();
+        this.label(tile, name, -55, 27, 20, 72, new Color(34, 59, 73));
+        this.label(tile, String(value), 22, 27, 27, 70, new Color(34, 59, 73));
+        const delta = value - base;
+        if (delta !== 0) this.label(tile, `（${delta > 0 ? '+' : ''}${delta}）`, 101, 27, 18, 88,
+            delta > 0 ? new Color(22, 166, 61) : new Color(207, 64, 67));
+        const progress = Math.max(0, Math.min(100, value));
+        const line = this.node(tile, 'CrystalTrack', 144, 4.5); line.setPosition(-57, -27);
+        const track = line.addComponent(Graphics); track.lineWidth = 4.5;
+        track.strokeColor = new Color(219, 225, 229);
+        track.moveTo(0, 0); track.lineTo(144, 0); track.stroke();
+        const distance = (score: number) => score <= 20 ? score * 0.8 : 16 + (score - 20) * 1.6;
+        // 0—20分填到第一颗；后续每20分跨一段。75分跨过第三颗，再前进至第四颗的75%。
+        for (let point = 0; point < Math.ceil(progress); point++) {
+            const start = point; const end = Math.min(progress, point + 1);
+            const stage = Math.max(0, Math.floor((point - 20) / 20));
+            const t = point < 20 ? 0 : (point - 20) / 20 - stage;
+            const next = Math.min(4, stage + 1);
+            const rgb = crystalColors[stage].map((channel, key) =>
+                Math.round(channel + (crystalColors[next][key] - channel) * t));
+            track.strokeColor = new Color(rgb[0], rgb[1], rgb[2]);
+            // 渐变小段向左微叠，消除抗锯齿接缝；末端仍严格停在真实分数位置。
+            track.moveTo(Math.max(0, distance(start) - 0.5), 0); track.lineTo(distance(end), 0); track.stroke();
         }
+        for (let index = 0; index < 5; index++) this.crystal(tile, index, progress >= (index + 1) * 20);
+    }
+
+    private crystal(parent: Node, index: number, active: boolean): void {
+        const node = this.node(parent, `Crystal-${index}`, 18, 18); node.setPosition(-41 + index * 32, -27);
+        const art = node.addComponent(Graphics);
+        const [r, green, b] = active ? crystalColors[index] : [204, 211, 216];
+        // 保留近圆十二边轮廓，内切面以明暗分区和偏移阴影增加卡通宝石的厚度。
+        const outline = (offsetY: number): void => {
+            for (let side = 0; side <= 12; side++) {
+                const angle = Math.PI / 12 + side * Math.PI / 6;
+                const px = Math.cos(angle) * 8; const py = Math.sin(angle) * 8 + offsetY;
+                if (side === 0) art.moveTo(px, py); else art.lineTo(px, py);
+            }
+        };
+        art.fillColor = new Color(25, 48, 65, 65); outline(-1.5); art.fill();
+        art.fillColor = new Color(r, green, b); outline(0); art.fill();
+        art.strokeColor = new Color(Math.round(r * 0.72), Math.round(green * 0.72), Math.round(b * 0.72));
+        art.lineWidth = 1.1; art.stroke();
+        const facet = (points: readonly (readonly [number, number])[], color: Color): void => {
+            art.fillColor = color;
+            points.forEach(([px, py], point) => { if (point === 0) art.moveTo(px, py); else art.lineTo(px, py); });
+            art.lineTo(points[0][0], points[0][1]); art.fill();
+        };
+        facet([[-7.7, 2], [-5.7, 5.7], [0, 7.7], [0, 3.8], [-3.8, 0]],
+            new Color(Math.min(255, r + 65), Math.min(255, green + 65), Math.min(255, b + 65)));
+        facet([[0, 7.7], [5.7, 5.7], [7.7, 2], [3.8, 0], [0, 3.8]],
+            new Color(Math.min(255, r + 24), Math.min(255, green + 24), Math.min(255, b + 24)));
+        facet([[7.7, 2], [7.7, -2], [5.7, -5.7], [0, -7.7], [0, -3.8], [3.8, 0]],
+            new Color(Math.round(r * 0.68), Math.round(green * 0.68), Math.round(b * 0.68)));
+        facet([[-7.7, 2], [-3.8, 0], [0, -3.8], [0, -7.7], [-5.7, -5.7], [-7.7, -2]],
+            new Color(Math.round(r * 0.85), Math.round(green * 0.85), Math.round(b * 0.85)));
+        facet([[0, 3.8], [3.8, 0], [0, -3.8], [-3.8, 0]], new Color(r, green, b));
+        art.strokeColor = new Color(255, 255, 255, active ? 160 : 90); art.lineWidth = 0.7;
+        art.moveTo(-3.8, 0); art.lineTo(0, 3.8); art.lineTo(3.8, 0); art.stroke();
+        // 偏离中心的亮斑让晶体在小尺寸下仍有辨识度；灰色节点使用同样的灰阶材质。
+        facet([[-5.8, 2.6], [-3.8, 5.2], [-1.2, 6], [-3.4, 3.1]], new Color(255, 255, 255, active ? 215 : 125));
     }
 
     hitClose(point: Vector2Data): boolean {

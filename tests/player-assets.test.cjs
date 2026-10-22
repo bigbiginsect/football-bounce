@@ -14,13 +14,13 @@ const catalog = parsePlayerCatalog(raw);
 const config = freezeConfig(prototypeConfig);
 const clone = value => structuredClone(value);
 
-test('20 名球员的能力档、技能和头像路径均有效', () => {
-  assert.equal(catalog.version, 'players-006');
-  assert.equal(catalog.players.length, 20);
-  assert.equal(new Set(catalog.players.map(player => player.id)).size, 20);
+test('22 名球员目录有效，已有20张头像与新增姓名徽章均可用', () => {
+  assert.equal(catalog.version, 'players-007');
+  assert.equal(catalog.players.length, 22);
+  assert.equal(new Set(catalog.players.map(player => player.id)).size, 22);
   assert.deepEqual(catalog.players.reduce((counts, player) => {
     counts[player.rarity] = (counts[player.rarity] ?? 0) + 1; return counts;
-  }, {}), { red: 5, gold: 6, purple: 5, blue: 4 });
+  }, {}), { red: 6, gold: 7, purple: 5, blue: 4 });
   assert.equal(getPlayerTemplate(catalog, 'messi').rarity, 'red');
   assert.equal(getPlayerTemplate(catalog, 'cristiano-ronaldo').rarity, 'red');
   assert.equal(catalog.players.filter(player => player.portraitPath).length, 20);
@@ -134,7 +134,7 @@ test('传入阵容建立独立实例，目录版本和自选位置经过序列�
   lineups.red[0].position = { x: 2, y: 4 };
   const state = createStandardMatchState('selected', config, 7, catalog, lineups);
   assert.equal(state.catalogVersion, catalog.version);
-  assert.equal(state.schemaVersion, 5);
+  assert.equal(state.schemaVersion, 6);
   assert.equal(state.players[0].templateId, 'van-dijk');
   assert.deepEqual(state.players[0].position, { x: -2, y: -4 });
   assert.equal(state.players[0].instanceId, 'blue-1');

@@ -4,10 +4,25 @@ export interface BodyState {
     readonly position: Vector2Data;
     readonly velocity: Vector2Data;
 }
+export interface PlayerAttributes {
+    readonly weight: number;
+    readonly power: number;
+    readonly precision: number;
+    readonly mentality: number;
+    readonly curve: number;
+}
+export type PlayerCondition = 'up' | 'normal' | 'down';
+export interface ConditionSession {
+    readonly seed: number;
+    readonly randomState: number;
+    readonly values: Readonly<Record<string, PlayerCondition>>;
+}
 export interface PlayerState extends BodyState {
     readonly instanceId: string;
     readonly templateId: string;
     readonly ownerId: string;
+    /** 标准比赛保存基础评分；练习占位实例可以省略。加成始终从基础值派生。 */
+    readonly attributes?: PlayerAttributes;
     readonly skill?: {
         readonly id: string;
         readonly params: Readonly<Record<string, string | number | boolean>>;
@@ -37,7 +52,8 @@ export interface MatchSkillState {
     readonly forcedPlayerId: string | null;
 }
 export interface GameState {
-    readonly schemaVersion: 5;
+    readonly schemaVersion: 6;
+    readonly conditions: ConditionSession;
     readonly revision: number;
     readonly matchId: string;
     readonly modeId: string;

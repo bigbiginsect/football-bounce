@@ -6,7 +6,8 @@ import { createStandardMatchState, freezeConfig, prototypeConfig, PrototypeConfi
 import { LaunchGesture } from '../core/LaunchGesture';
 import { CocosPhysics } from '../adapters/physics/CocosPhysics';
 import { PrototypeView } from './PrototypeView';
-import { parsePlayerCatalog, PlayerCatalog } from '../core/PlayerCatalog';
+import { createPlayerConditions, parsePlayerCatalog, PlayerCatalog } from '../core/PlayerCatalog';
+import type { ConditionSession } from '../core/GameState';
 import { LineupEditor, LineupEdit } from '../application/LineupEditor';
 import type { MatchLineups } from '../core/Lineup';
 import { LineupView } from './LineupView';
@@ -21,6 +22,7 @@ type SoundCue = 'launch' | 'collision' | 'goal' | 'timeout' | 'finish';
 export class Boot extends Component {
     private config!: PrototypeConfig;
     private catalog!: PlayerCatalog;
+    private conditions: ConditionSession = { seed: 0, randomState: 0, values: {} };
     private portraitFrames = new Map<string, SpriteFrame>();
     private match?: LocalMatch;
     private physics?: CocosPhysics;
@@ -54,6 +56,7 @@ export class Boot extends Component {
         const catalogAsset = await new Promise<JsonAsset>((resolve, reject) =>
             bundle.load('config/players', JsonAsset, (error, asset) => error ? reject(error) : resolve(asset)));
         this.catalog = parsePlayerCatalog(catalogAsset.json);
+        this.conditions = createPlayerConditions(this.catalog, (Date.now() ^ Math.imul(++sessionSequence, 0x9e3779b9)) >>> 0);
         const frameLoads: Promise<readonly [string, SpriteFrame]>[] = [];
         for (const template of this.catalog.players) {
             const portraitPath = template.portraitPath;
@@ -97,7 +100,7 @@ export class Boot extends Component {
         this.lineupView?.dispose();
         this.lineupEditor = new LineupEditor(this.catalog, this.config, this.lineups);
         this.lineupView = new LineupView(this.node, this.catalog, this.portraitFrames,
-            edit => this.submitLineup(edit));
+            edit => this.submitLineup(edit), this.conditions);
         this.lineupView.setDraft(this.lineupEditor.getSnapshot());
         this.message = '';
     }
@@ -122,7 +125,7 @@ export class Boot extends Component {
         const sequence = ++sessionSequence;
         const seed = (Date.now() ^ Math.imul(sequence, 0x9e3779b9)) >>> 0;
         const state = createStandardMatchState(`local-${Date.now()}-${sequence}`, this.config, seed,
-            this.catalog, this.lineups);
+            this.catalog, this.lineups, this.conditions);
         this.physics = new CocosPhysics(this.node.scene!, this.config, state, this.catalog);
         this.match = new LocalMatch(state, this.physics, this.config);
         this.feedbackTracker.reset(state);

@@ -4,10 +4,11 @@ import type { GameState, Vector2Data } from '../core/GameState';
 import type { PrototypeConfig } from '../core/PrototypeConfig';
 import type { LaunchGesture } from '../core/LaunchGesture';
 import type { PlayerCatalog } from '../core/PlayerCatalog';
-import { getPlayerTemplate, playerGameplayValues } from '../core/PlayerCatalog';
+import { getPlayerTemplate, matchPlayerTemplate, playerGameplayValues } from '../core/PlayerCatalog';
 import type { MatchOverlay, MatchSide } from './MatchFeedback';
 import { matchClock, sideLabel } from './MatchFeedback';
 import { effectiveAimDirection } from '../core/PlayerSkills';
+import { drawConditionBadge } from './PlayerInfoView';
 
 const pixelsPerMeter = 80;
 /** 位置读取权威状态；本地皮球图案角度读取物理刚体。物理节点不挂在本视图下。 */
@@ -236,6 +237,11 @@ export class PrototypeView {
             g.lineWidth = player.ownerId === state.activeOperatorId ? 4 : 2; g.stroke();
             this.portraitNodes?.get(player.instanceId)?.node.setPosition(
                 player.position.x * pixelsPerMeter, player.position.y * pixelsPerMeter);
+            const condition = state.conditions.values[player.templateId] ?? 'normal';
+            if (condition !== 'normal') {
+                const x = player.position.x * pixelsPerMeter + this.config.playerRadius * pixelsPerMeter + 7;
+                drawConditionBadge(g, condition, x, player.position.y * pixelsPerMeter, 19);
+            }
         }
         this.drawBall(g, state.ball.position.x * pixelsPerMeter, state.ball.position.y * pixelsPerMeter,
             this.config.ballRadius * pixelsPerMeter, ballAngle, state.ball.velocity);
@@ -246,7 +252,7 @@ export class PrototypeView {
             const x = player.position.x * pixelsPerMeter; const y = player.position.y * pixelsPerMeter;
             const power = Math.max(0, Math.min(1, gesture.aim?.power ?? 0));
             const maxRadius = this.catalog
-                ? playerGameplayValues(getPlayerTemplate(this.catalog, player.templateId), this.config)
+                ? playerGameplayValues(matchPlayerTemplate(getPlayerTemplate(this.catalog, player.templateId), player, state), this.config)
                     .powerCircleMaxRadius
                 : this.config.powerCircleMaxRadius;
             const radius = this.config.playerRadius + (maxRadius - this.config.playerRadius) * power;
@@ -259,7 +265,7 @@ export class PrototypeView {
             const x = player.position.x * pixelsPerMeter; const y = player.position.y * pixelsPerMeter;
             // 精度决定可见瞄准长度；力量决定力度盘上限，二者都由球员配置只读派生。
             const length = (this.catalog
-                ? playerGameplayValues(getPlayerTemplate(this.catalog, player.templateId), this.config).aimLength
+                ? playerGameplayValues(matchPlayerTemplate(getPlayerTemplate(this.catalog, player.templateId), player, state), this.config).aimLength
                 : this.config.aimLength) * pixelsPerMeter;
             const dash = this.config.aimDashLength * pixelsPerMeter;
             const spacing = (this.config.aimDashLength + this.config.aimDashGap) * pixelsPerMeter;

@@ -58,6 +58,8 @@ Android 首次试打包作为支线，在本地完整对局可玩后、其他机
 
 ## 阶段 3：球员资产与基本体验
 
+warehouse 当前开发（2026-10-22）：增加心理状态、突破100的属性与增量显示、齐祖/甜菜半场技能，目录22人；已通过类型检查及126项测试，尚未合入main，Creator试玩及暂定参数确认待完成，见 [本批施工](worklogs/2026-10-22-player-condition-auras/b1.md)。下文保留本次分支整理时的集成主线验收范围。
+
 **状态：进行中（2026-10-22 已将统一滚动页面、20 人头像与技能扩充、四列候补和比赛顶部覆盖修复集成到 main；114 项测试通过，合并后的 Creator 试玩待回归）。** 当前保留三个阵型、0.2 秒长按换人与边缘滚动、信息卡、五维属性、红金紫蓝能力档、五类实际技能、开球违例、瞄准反馈、重量碰撞、立体皮球、四角弹簧、HUD 和音效。历史统一页面与顶部修复的用户验收记录保持原范围，不能替代本批合并后试玩。详见 [统一选人](worklogs/2026-10-09-unified-lineup-scroll/requirement-gap.md)、[球员扩充](worklogs/2026-10-10-player-roster-skills-rarity/requirement-gap.md)、[顶部修复](worklogs/2026-09-24-stage3-match-feedback/b2.md)、[资产录入](docs/player-assets.md) 与 [本次集成记录](worklogs/2026-10-22-branch-consolidation/b1.md)。
 
 **目标：球员有可感知的差异，游戏流程容易理解。**

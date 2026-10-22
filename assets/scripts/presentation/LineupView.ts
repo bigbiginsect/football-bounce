@@ -1,12 +1,12 @@
 import { Canvas, Camera, Color, Graphics, Label, Mask, Node, Sprite, SpriteFrame,
     UITransform, Vec3, isValid } from 'cc';
-import type { Vector2Data } from '../core/GameState';
+import type { ConditionSession, PlayerState, Vector2Data } from '../core/GameState';
 import type { PlayerCatalog } from '../core/PlayerCatalog';
-import { getPlayerTemplate, playerRarityPresentation } from '../core/PlayerCatalog';
+import { getPlayerTemplate, playerAuraBonuses, playerRarityPresentation } from '../core/PlayerCatalog';
 import { formationDefinitions, formationPositions } from '../core/Lineup';
 import type { FormationId } from '../core/Lineup';
 import type { LineupDraftSnapshot, LineupEdit } from '../application/LineupEditor';
-import { PlayerInfoView } from './PlayerInfoView';
+import { drawConditionBadge, PlayerInfoView } from './PlayerInfoView';
 
 /** 720×1280 设计坐标中的交互初值，按试玩调整，不改变规则层。 */
 export const lineupInteraction = Object.freeze({
@@ -46,7 +46,8 @@ export class LineupView {
 
     constructor(parent: Node, private readonly catalog: PlayerCatalog,
         private readonly portraits: ReadonlyMap<string, SpriteFrame>,
-        private readonly submit: (edit: LineupEdit) => void) {
+        private readonly submit: (edit: LineupEdit) => void,
+        private readonly conditions: ConditionSession = { seed: 0, randomState: 0, values: {} }) {
         const camera = parent.getComponent(Canvas)?.cameraComponent;
         if (!camera) throw new Error('阵容视图需要 Canvas 相机');
         this.camera = camera;
@@ -189,7 +190,19 @@ export class LineupView {
             this.submit({ type: touch.button === 'back' ? 'BackToBlue' : 'ConfirmSide' }); return;
         }
         if (touch.mode === 'pending' && shortTap) {
-            if (touch.source) this.info.show(touch.source.templateId);
+            if (touch.source) {
+                const id = touch.source.templateId;
+                const side = this.snapshot.side;
+                // 赛前仅预览当前队已上阵球员的己方半场光环，候补尚未获得场上技能。
+                const players: PlayerState[] = this.snapshot[side].map((templateId, index) => ({
+                    instanceId: `${side}-${index}`, templateId, ownerId: side,
+                    position: { x: 0, y: side === 'blue' ? -1 : 1 }, velocity: { x: 0, y: 0 },
+                    skill: getPlayerTemplate(this.catalog, templateId).skill,
+                }));
+                const target = players.find(p => p.templateId === id);
+                this.info.show(id, this.conditions?.values[id] ?? 'normal',
+                    target ? playerAuraBonuses(target, { players }) : {});
+            }
             else if (touch.formationId) this.submit({ type: 'SelectFormation', formationId: touch.formationId });
             return;
         }
@@ -295,6 +308,12 @@ export class LineupView {
         const name = this.label(card, template.name, 0, field ? -34 : -49, 18, field ? 114 : 136,
             new Color(240, 244, 248));
         name.overflow = Label.Overflow.SHRINK;
+        const condition = this.conditions?.values[id] ?? 'normal';
+        if (condition !== 'normal') {
+            const badge = this.node(card, 'ConditionBadge', 28, 34);
+            badge.setPosition(width / 2 - 18, height / 2 - 23);
+            drawConditionBadge(badge.addComponent(Graphics), condition, 0, 0, 27);
+        }
         return card;
     }
     private button(x: number, y: number, width: number, name: string, color: Color): Node {
