@@ -18,6 +18,7 @@ export interface LineupDraftSnapshot {
     readonly bench: readonly string[];
     readonly formationId: FormationId;
     readonly ready: boolean;
+    readonly singleSide?: boolean;
 }
 
 /** 赛前阵容的唯一写入口。槽位保存模板 ID，开局坐标来自当前队选择的阵型。 */
@@ -28,7 +29,8 @@ export class LineupEditor {
     private readonly formationIds: Record<TeamSide, FormationId>;
 
     constructor(private readonly catalog: PlayerCatalog, private readonly config: PrototypeConfig,
-        previous: MatchLineups = defaultLineups()) {
+        previous: MatchLineups = defaultLineups(), private readonly singleSide?: TeamSide) {
+        if (singleSide) this.side = singleSide;
         const checked = validateLineups(previous, catalog, config);
         this.teams = {
             blue: checked.blue.map(item => item.templateId),
@@ -45,7 +47,7 @@ export class LineupEditor {
         return {
             side: this.side, blue: [...this.teams.blue], red: [...this.teams.red],
             bench: this.catalog.players.filter(player => !selected.has(player.id)).map(player => player.id),
-            formationId: this.formationIds[this.side], ready: this.ready,
+            formationId: this.formationIds[this.side], ready: this.ready, singleSide: Boolean(this.singleSide),
         };
     }
 
@@ -69,11 +71,12 @@ export class LineupEditor {
             this.formationIds[this.side] = edit.formationId;
             return true;
         case 'ConfirmSide':
-            if (this.side === 'blue') this.side = 'red';
+            if (this.singleSide) this.ready = true;
+            else if (this.side === 'blue') this.side = 'red';
             else this.ready = true;
             return true;
         case 'BackToBlue':
-            if (this.side !== 'red') return false;
+            if (this.singleSide || this.side !== 'red') return false;
             this.side = 'blue'; return true;
         }
     }

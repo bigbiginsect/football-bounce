@@ -313,6 +313,27 @@ test('运动中按下不延迟发射，第二触点不能结束当前拖动', ()
   assert.equal(boot.gesture.preview(), null);
   assert.equal(boot.match.getAcceptedCommands().length, 1);
 });
+test('联机客端只提交本方命令、不本地模拟，房间等待选人时仍推进心跳', () => {
+  const { boot, event } = setup();
+  const initial = { ...createStandardMatchState('lan-input', config, 5, catalog), activeOperatorId: 'blue' };
+  boot.match = undefined; boot.remoteState = initial;
+  boot.remoteStatus = { reason: 'ready', seconds: 0, droppedSeconds: 0 };
+  let commands = [], ticks = 0, interrupts = 0;
+  boot.lan = { isNetwork: true, side: 'red', launch: c => { commands.push(c); return { ok: true }; },
+    tick: dt => ticks += dt, interrupt: () => interrupts++ };
+  boot.beginTouch(event()); assert.equal(boot.gesture.preview(), null);
+  boot.remoteState = { ...initial, activeOperatorId: 'red' };
+  const player = initial.players.find(p => p.ownerId === 'red');
+  boot.beginTouch(event(player.position.x, player.position.y));
+  boot.endTouch(event(player.position.x, player.position.y - 0.5));
+  assert.equal(commands.length, 1); assert.equal(commands[0].operatorId, 'red');
+  const before = JSON.stringify(boot.remoteState); boot.update(0.1);
+  assert.equal(JSON.stringify(boot.remoteState), before);
+  assert.equal(boot.match, undefined); assert.equal(ticks, 0.1);
+  boot.lineupView = { update() {}, touchCancel() {} }; boot.update(0.2);
+  assert.ok(Math.abs(ticks - 0.3) < 1e-9);
+  boot.hide(); assert.equal(interrupts, 1);
+});
 test('触点转换使用渲染相机，适应视口偏移和不同缩放', () => {
   for (const scale of [0.5, 1, 1.5]) {
     const screen = Object.create(PrototypeView.prototype);

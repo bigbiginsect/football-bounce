@@ -7,7 +7,9 @@ import { LaunchGesture } from '../core/LaunchGesture';
 import { CocosPhysics } from '../adapters/physics/CocosPhysics';
 import { PrototypeView } from './PrototypeView';
 import { createPlayerConditions, parsePlayerCatalog, PlayerCatalog } from '../core/PlayerCatalog';
-import type { ConditionSession } from '../core/GameState';
+import type { ConditionSession, GameState } from '../core/GameState';
+import type { SimulationStatus } from '../core/LanProtocol';
+import { LanController } from './LanController';
 import { LineupEditor, LineupEdit } from '../application/LineupEditor';
 import type { MatchLineups } from '../core/Lineup';
 import { LineupView } from './LineupView';
@@ -25,6 +27,10 @@ export class Boot extends Component {
     private conditions: ConditionSession = { seed: 0, randomState: 0, values: {} };
     private portraitFrames = new Map<string, SpriteFrame>();
     private match?: LocalMatch;
+    private lan?: LanController;
+    private remoteState?: GameState;
+    private remoteStatus?: SimulationStatus;
+    private remoteBallAngle = 0;
     private physics?: CocosPhysics;
     private screen?: PrototypeView;
     private lineupView?: LineupView;
@@ -77,7 +83,32 @@ export class Boot extends Component {
         const audioNode = new Node('MatchAudio'); audioNode.layer = this.node.layer; this.node.addChild(audioNode);
         this.audioSource = audioNode.addComponent(AudioSource); this.audioSource.volume = 0.8;
         this.gesture = new LaunchGesture(this.config);
-        this.openLineup(); this.listen();
+        this.lan = new LanController(this.node, this.config, this.catalog, this.conditions, {
+            local: () => this.openLineup(),
+            choose: (side, conditions) => {
+                this.openLineup(side, conditions);
+            },
+            clear: () => this.clearMatch(),
+            createMatch: (lineups, matchId, conditions) => {
+                this.clearMatch();
+                const state = createStandardMatchState(matchId, this.config,
+                    (Date.now() ^ Math.imul(++sessionSequence, 0x9e3779b9)) >>> 0, this.catalog, lineups, conditions);
+                this.physics = new CocosPhysics(this.node.scene!, this.config, state, this.catalog);
+                this.match = new LocalMatch(state, this.physics, this.config);
+                this.createNetworkScreen(state); this.feedbackTracker.reset(state);
+                this.skipFrame = true; this.draw(); return this.match;
+            },
+            snapshot: (state, status, angle) => {
+                if (this.remoteState?.matchId !== state.matchId) {
+                    this.clearMatch(); this.createNetworkScreen(state); this.feedbackTracker.reset(state);
+                }
+                this.remoteState = state; this.remoteStatus = status; this.remoteBallAngle = angle;
+                this.draw();
+            },
+            rejected: reason => { this.message = `操作被拒绝：${reason}`; },
+            ballAngle: () => this.physics?.getBallAngle() ?? 0,
+        });
+        this.lan.openMenu(); this.listen();
     }
     private showStartupError(error: unknown): void {
         if (!isValid(this.node, true)) return;
@@ -92,15 +123,35 @@ export class Boot extends Component {
             console.error(error);
         } catch (displayError) { console.error(error, displayError); }
     }
-    private openLineup(): void {
+    private clearMatch(): void {
+        this.gesture?.cancel(); this.physics?.dispose(); this.physics = undefined;
+        this.screen?.dispose(); this.screen = undefined; this.match = undefined;
+        this.remoteState = undefined; this.remoteStatus = undefined; this.remoteBallAngle = 0;
+        this.lineupView?.dispose(); this.lineupView = undefined; this.lineupEditor = undefined;
+        this.audioSource?.stop(); this.feedbackTracker.reset();
+        this.feedbackOverlay = null; this.feedbackSeconds = 0; this.collisionCooldown = 0; this.message = '';
+    }
+    private createNetworkScreen(state: GameState): void {
+        const team = (side: 'blue' | 'red') => state.players.filter(p => p.ownerId === side).map(p => ({
+            templateId: p.templateId, position: state.kickoff.players.find(k => k.instanceId === p.instanceId)!.position,
+        }));
+        this.lineups = { blue: team('blue'), red: team('red') };
+        this.lineupView?.dispose(); this.lineupView = undefined; this.lineupEditor = undefined;
+        this.screen = new PrototypeView(this.node, this.config, () => this.lan?.rematch(),
+            () => this.lan?.rematch(), this.catalog, this.portraitFrames, () => this.lan?.openMenu('已退出房间'));
+        this.screen.setPlayers(state);
+    }
+    private getState(): GameState | undefined { return this.match?.getSnapshot() ?? this.remoteState; }
+    private getStatus(): SimulationStatus | undefined { return this.match?.getSimulationStatus() ?? this.remoteStatus; }
+    private openLineup(side?: 'blue' | 'red', conditions = this.conditions): void {
         this.gesture?.cancel(); this.physics?.dispose(); this.physics = undefined;
         this.screen?.dispose(); this.screen = undefined; this.match = undefined;
         this.audioSource?.stop(); this.feedbackTracker.reset();
         this.feedbackOverlay = null; this.feedbackSeconds = 0; this.collisionCooldown = 0;
         this.lineupView?.dispose();
-        this.lineupEditor = new LineupEditor(this.catalog, this.config, this.lineups);
+        this.lineupEditor = new LineupEditor(this.catalog, this.config, this.lineups, side);
         this.lineupView = new LineupView(this.node, this.catalog, this.portraitFrames,
-            edit => this.submitLineup(edit), this.conditions);
+            edit => this.submitLineup(edit), conditions, () => this.lan?.openMenu());
         this.lineupView.setDraft(this.lineupEditor.getSnapshot());
         this.message = '';
     }
@@ -111,11 +162,16 @@ export class Boot extends Component {
             this.lineupView?.setDraft(snapshot);
             return;
         }
+        if (this.lan?.isNetwork) {
+            const selection = { formationId: snapshot.formationId, templateIds: snapshot[snapshot.side] };
+            this.lineupView?.dispose(); this.lineupView = undefined; this.lineupEditor = undefined;
+            this.lan.ready(selection); return;
+        }
         this.lineups = this.lineupEditor.toMatchLineups();
         this.lineupView?.dispose(); this.lineupView = undefined; this.lineupEditor = undefined;
         this.screen = new PrototypeView(this.node, this.config, () => {
             if (!this.gesture?.preview()) this.reset();
-        }, () => this.openLineup(), this.catalog, this.portraitFrames);
+        }, () => this.openLineup(), this.catalog, this.portraitFrames, undefined, () => this.lan?.openMenu());
         this.reset();
     }
     private reset(): void {
@@ -135,15 +191,15 @@ export class Boot extends Component {
     private readonly beginTouch = (event: EventTouch): void => {
         const id = event.getID(); if (id === null) return;
         if (this.background || !this.enabledInHierarchy) return;
+        if (this.paused) this.resume();
         if (this.lineupView) {
-            if (this.paused) this.resume();
             this.lineupView.touchStart(id, event.getLocation()); return;
         }
-        if (!this.match || !this.screen) return;
+        if (!this.getState() || !this.screen) return;
         // 编辑器嵌入预览失焦后不一定先收到 window.focus；真实触摸本身即可恢复前台输入。
         // 同一个 TOUCH_START 继续用于选人，不能让用户的第一次拖动只负责解除暂停。
-        if (this.paused) this.resume();
-        const state = this.match.getSnapshot(); if (state.phase !== 'Aiming') return;
+        const state = this.getState()!; if (state.phase !== 'Aiming') return;
+        if (this.lan?.side && state.activeOperatorId !== this.lan.side) return;
         const point = this.screen.toField(event.getLocation());
         const player = state.players.find(p => p.ownerId === state.activeOperatorId
             && (!state.skills.forcedPlayerId || p.instanceId === state.skills.forcedPlayerId)
@@ -158,14 +214,15 @@ export class Boot extends Component {
     private readonly endTouch = (event: EventTouch): void => {
         const id = event.getID(); if (id === null) return;
         if (this.lineupView) { this.lineupView.touchEnd(id, event.getLocation()); return; }
-        if (this.paused || !this.screen || !this.match) return;
+        if (this.paused || !this.screen || !this.getState()) return;
         const launch = this.gesture?.end(id, this.screen.toField(event.getLocation()));
         if (!launch?.aim) return;
-        const state = this.match.getSnapshot();
-        const operatorId = state.activeOperatorId;
-        const result = this.match.execute({ type: 'Launch', commandId: `${state.matchId}-${++this.commandSequence}`,
+        const state = this.getState()!;
+        const operatorId = this.lan?.side ?? state.activeOperatorId;
+        const command = { type: 'Launch' as const, commandId: `${state.matchId}-${operatorId}-${++this.commandSequence}`,
             matchId: state.matchId, turnNumber: state.turnNumber, operatorId, playerId: launch.playerId,
-            ...launch.aim }, operatorId);
+            ...launch.aim };
+        const result = this.lan?.isNetwork ? this.lan.launch(command) : this.match!.execute(command, operatorId);
         this.message = result.ok ? '' : `操作被拒绝：${result.reason}`;
         if (result.ok) this.playCue('launch', 0.75);
     };
@@ -174,6 +231,7 @@ export class Boot extends Component {
         if (id !== null) this.lineupView?.touchCancel(id);
     };
     private readonly pause = (): void => {
+        this.lan?.interrupt();
         this.paused = true; this.gesture?.cancel(); this.lineupView?.touchCancel();
         this.audioSource?.stop();
         this.match?.discardAccumulatedTime();
@@ -196,7 +254,7 @@ export class Boot extends Component {
             window.addEventListener('blur', this.pause); window.addEventListener('focus', this.resume);
         }
     }
-    onEnable(): void { if (this.match || this.lineupEditor) { this.resume(); this.listen(); } }
+    onEnable(): void { if (this.match || this.lineupEditor || this.lan) { this.resume(); this.listen(); } }
     onDisable(): void {
         this.pause(); this.listening = false;
         input.off(Input.EventType.TOUCH_START, this.beginTouch, this);
@@ -210,18 +268,18 @@ export class Boot extends Component {
     }
     update(deltaSeconds: number): void {
         if (this.paused) return;
+        this.lan?.tick(deltaSeconds);
         if (this.lineupView) { this.lineupView.update(deltaSeconds); return; }
         this.feedbackSeconds = Math.max(0, this.feedbackSeconds - deltaSeconds);
         if (this.feedbackSeconds <= 0) this.feedbackOverlay = null;
         this.collisionCooldown = Math.max(0, this.collisionCooldown - deltaSeconds);
-        if (this.skipFrame) this.skipFrame = false; else this.match?.advance(deltaSeconds);
+        if (this.skipFrame) this.skipFrame = false; else if (!this.lan?.isNetwork) this.match?.advance(deltaSeconds);
         this.collectFeedback();
         this.draw();
     }
     private collectFeedback(): void {
-        if (!this.match) return;
-        const state = this.match.getSnapshot();
-        const status = this.match.getSimulationStatus();
+        const state = this.getState(); const status = this.getStatus();
+        if (!state || !status) return;
         const events = this.feedbackTracker.observe(state, status.reason);
         let suppressCollision = false;
         for (const event of events) {
@@ -249,8 +307,8 @@ export class Boot extends Component {
         this.audioSource?.playOneShot(clip, volume);
     }
     private draw(): void {
-        if (!this.match || !this.screen) return;
-        const state = this.match.getSnapshot(); const status = this.match.getSimulationStatus();
+        const state = this.getState(); const status = this.getStatus();
+        if (!state || !status || !this.screen) return;
         let gesture = this.gesture?.preview() ?? null;
         const selected = gesture && state.players.find(player => player.instanceId === gesture!.playerId);
         if (gesture && (state.phase !== 'Aiming' || selected?.ownerId !== state.activeOperatorId
@@ -275,13 +333,17 @@ export class Boot extends Component {
                         : skillTitle || reasons[status.reason];
         const forcedPlayer = state.skills.forcedPlayerId
             ? state.players.find(player => player.instanceId === state.skills.forcedPlayerId) : undefined;
-        this.screen.render(state, gesture, this.message || title,
+        const networkTitle = this.lan?.side && state.phase === 'Aiming' && !gesture
+            ? state.activeOperatorId === this.lan.side ? '轮到你了 · 拖动己方球员发射' : '等待对方操作' : title;
+        this.screen.render(state, gesture, this.message || networkTitle,
             `第 ${state.turnNumber} 回合 · 先手 ${state.random.firstOperatorId === 'blue' ? '蓝方' : '红方'}`
+            + `${this.lan?.side ? this.lan.side === 'blue' ? ' · 你是蓝队' : ' · 你是红队' : ''}`
             + `${forcedPlayer ? ' · 仅可操作内马尔' : ''}`
             + `${status.droppedSeconds > 0.01 ? ' · 卡顿已限步' : ''}`,
-            this.physics?.getBallAngle?.() ?? 0, this.feedbackOverlay);
+            this.physics?.getBallAngle?.() ?? this.remoteBallAngle, this.feedbackOverlay);
     }
     onDestroy(): void {
+        this.lan?.dispose();
         this.audioSource?.stop(); this.physics?.dispose(); this.screen?.dispose(); this.lineupView?.dispose();
     }
 }

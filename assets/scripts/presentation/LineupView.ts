@@ -47,7 +47,8 @@ export class LineupView {
     constructor(parent: Node, private readonly catalog: PlayerCatalog,
         private readonly portraits: ReadonlyMap<string, SpriteFrame>,
         private readonly submit: (edit: LineupEdit) => void,
-        private readonly conditions: ConditionSession = { seed: 0, randomState: 0, values: {} }) {
+        private readonly conditions: ConditionSession = { seed: 0, randomState: 0, values: {} },
+        exit?: () => void) {
         const camera = parent.getComponent(Canvas)?.cameraComponent;
         if (!camera) throw new Error('阵容视图需要 Canvas 相机');
         this.camera = camera;
@@ -74,6 +75,7 @@ export class LineupView {
         this.confirmLabel = this.label(this.root, '', 77, -581, 25, 460);
         this.label(this.root, '长按首发可拖动交换站位', 0, -630, 16, 680);
         this.info = new PlayerInfoView(this.root, catalog, portraits);
+        if (exit) this.button(-260, 624, 170, '返回菜单', new Color(48, 72, 88)).on(Node.EventType.TOUCH_END, exit);
     }
 
     setDraft(snapshot: LineupDraftSnapshot): void {
@@ -84,10 +86,10 @@ export class LineupView {
         const sideName = snapshot.side === 'blue' ? '蓝队' : '红队';
         this.title.string = sideName + ' · 选择首发';
         this.title.color = snapshot.side === 'blue' ? new Color(111, 201, 255) : new Color(255, 133, 134);
-        this.subtitle.string = snapshot.side === 'blue' ? '第 1 步 / 2 · 布置蓝队的 5 个位置'
+        this.subtitle.string = snapshot.singleSide ? '附近联机 · 仅设置自己的 5 个位置' : snapshot.side === 'blue' ? '第 1 步 / 2 · 布置蓝队的 5 个位置'
             : '第 2 步 / 2 · 布置红队的 5 个位置';
-        this.confirmLabel.string = snapshot.side === 'blue' ? '确认蓝队 →' : '确认红队 · 开始比赛';
-        this.backButton.active = snapshot.side === 'red';
+        this.confirmLabel.string = snapshot.singleSide ? '确认阵容 · 准备比赛' : snapshot.side === 'blue' ? '确认蓝队 →' : '确认红队 · 开始比赛';
+        this.backButton.active = !snapshot.singleSide && snapshot.side === 'red';
         this.benchTitle.string = '候补仓库 · ' + snapshot.bench.length + ' 人';
         this.slotPoints = formationPositions(snapshot.formationId, 'blue').map(point => ({
             x: point.x * 90, y: 102 + (point.y + 3) * 170,

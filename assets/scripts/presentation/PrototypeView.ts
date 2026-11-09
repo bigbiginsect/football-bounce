@@ -35,7 +35,8 @@ export class PrototypeView {
 
     constructor(parent: Node, private readonly config: PrototypeConfig, restart: () => void,
         editLineups: () => void,
-        private readonly catalog?: PlayerCatalog, private readonly portraitFrames?: ReadonlyMap<string, SpriteFrame>) {
+        private readonly catalog?: PlayerCatalog, private readonly portraitFrames?: ReadonlyMap<string, SpriteFrame>,
+        private readonly networkExit?: () => void, modeMenu?: () => void) {
         const camera = parent.getComponent(Canvas)?.cameraComponent;
         if (!camera) throw new Error('球场视图需要 Canvas 的渲染相机');
         this.camera = camera;
@@ -70,7 +71,8 @@ export class PrototypeView {
         this.portraitLayer = this.node(field, 'Portraits', w, h);
         this.aim = this.node(field, 'Aim', w, h).addComponent(Graphics);
         this.info = this.label(this.root, '', -478, 19);
-        this.activeRestartButton = this.button(this.root, '重新开始', 0, -550, restart, 250);
+        this.activeRestartButton = this.button(this.root, networkExit ? '退出房间' : '重新开始', 0, -550, networkExit ?? restart, 250);
+        if (modeMenu) this.button(this.root, '切换模式', 255, -550, modeMenu, 170);
 
         this.eventPanel = this.panel(this.root, 'EventFeedback', 520, 174, 0, 20,
             new Color(18, 30, 39, 238), 22);
@@ -84,7 +86,7 @@ export class PrototypeView {
         this.resultScore = this.label(this.resultPanel, '', 40, 31);
         this.label(this.resultPanel, '比赛时间结束', -14, 20).color = new Color(177, 194, 202);
         this.button(this.resultPanel, '再来一局', -137, -112, restart, 240);
-        this.button(this.resultPanel, '调整阵容', 137, -112, editLineups, 240);
+        this.button(this.resultPanel, networkExit ? '退出房间' : '调整阵容', 137, -112, networkExit ?? editLineups, 240);
         this.resultPanel.active = false;
         this.label(this.root, `${config.version} · 标准模式 3 分钟 · 每队 5 人`, -612, 17);
     }
