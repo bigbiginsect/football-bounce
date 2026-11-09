@@ -36,6 +36,7 @@ function load(relative) {
   return exports;
 }
 const { Boot } = load('assets/scripts/presentation/Boot.ts');
+const { LanController } = load('assets/scripts/presentation/LanController.ts');
 const { PrototypeView } = load('assets/scripts/presentation/PrototypeView.ts');
 const { LineupView } = load('assets/scripts/presentation/LineupView.ts');
 const { PlayerInfoView } = load('assets/scripts/presentation/PlayerInfoView.ts');
@@ -333,6 +334,19 @@ test('联机客端只提交本方命令、不本地模拟，房间等待选人�
   boot.lineupView = { update() {}, touchCancel() {} }; boot.update(0.2);
   assert.ok(Math.abs(ticks - 0.3) < 1e-9);
   boot.hide(); assert.equal(interrupts, 1);
+});
+test('远程菜单空加入码不能创建房间，连接口令校验可见，蓝方身份取自服务分配', () => {
+  const messages = [], requests = [];
+  const controller = new LanController(undefined, config, catalog, { seed: 1, randomState: 1, values: {} }, {});
+  controller.menu = { setMessage: message => messages.push(message) };
+  controller.joinRoom = (address, remote) => requests.push({ address, remote });
+  controller.requestRemote('wss://example.com', 'test-key-12345678', 'Join', '');
+  assert.equal(requests.length, 0); assert.match(messages.at(-1), /房间码/);
+  controller.requestRemote('wss://example.com', 'short', 'Create', '');
+  assert.equal(requests.length, 0); assert.match(messages.at(-1), /口令/);
+  controller.requestRemote('wss://example.com', 'test-key-12345678', 'Create', '');
+  assert.equal(requests[0].remote.action, 'Create');
+  controller.client = { side: 'blue' }; assert.equal(controller.side, 'blue');
 });
 test('触点转换使用渲染相机，适应视口偏移和不同缩放', () => {
   for (const scale of [0.5, 1, 1.5]) {

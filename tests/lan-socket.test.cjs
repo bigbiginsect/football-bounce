@@ -102,3 +102,23 @@ test('原生服务端事件转换、发送失败、关闭清理及取消监听�
     assert.equal(closed, 1); assert.equal(failure, undefined);
     const late = { close() { this.closed = true; } }; native.onconnection(late); assert.equal(late.closed, true);
 });
+test('远程地址支持域名、IPv6、wss及代理路径，拒绝混入凭据或无效端口', async () => {
+    let socket;
+    class Socket {
+        readyState = 1; bufferedAmount = 0;
+        constructor(url) { this.url = url; socket = this; }
+        close() { this.closed = true; }
+        send(data) { this.sent = data; }
+    }
+    const a = adapter({ WebSocket: Socket });
+    assert.equal(a.remoteAddress('wss://example.com'), 'wss://example.com/football');
+    assert.equal(a.remoteAddress('ws://[2001:db8::1]:8766/football'), 'ws://[2001:db8::1]:8766/football');
+    assert.equal(a.remoteAddress('wss://example.com/proxy/game'), 'wss://example.com/proxy/game');
+    for (const invalid of ['http://example.com', 'ws://user:key@example.com', 'wss://example.com?key=secret',
+        'ws://host:0', 'ws://host:65536', 'ws://[1::2::3]', 'ws://[1234]', 'ws://999.1.1.1', 'ws://bad..host'])
+        assert.throws(() => a.remoteAddress(invalid));
+    const attempt = a.connectRemote('wss://example.com/proxy/game'); socket.onopen(); const peer = await attempt.result;
+    assert.equal(socket.url, 'wss://example.com/proxy/game');
+    let received; peer.onMessage = data => received = data; socket.onmessage({ data: 'snapshot' });
+    assert.equal(received, 'snapshot'); peer.send('hello'); assert.equal(socket.sent, 'hello'); peer.close();
+});

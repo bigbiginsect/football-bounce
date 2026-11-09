@@ -11,5 +11,5 @@
     "types": [],
     "lib": ["ES2020"]
   },
-  "include": ["assets/scripts/core/**/*.ts", "assets/scripts/application/**/*.ts"]
+  "include": ["assets/scripts/core/**/*.ts", "assets/scripts/application/**/*.ts", "assets/scripts/adapters/physics/Box2DPhysics.ts"]
 }

@@ -7,11 +7,12 @@ import type { PlayerCatalog } from './PlayerCatalog';
 import type { PrototypeConfig } from './PrototypeConfig';
 import { isPlayablePosition } from './BoundaryGeometry';
 
-export const lanSettings = Object.freeze({ protocol: 1, port: 8765, snapshotSeconds: 0.05,
+export const lanSettings = Object.freeze({ protocol: 2, port: 8765, snapshotSeconds: 0.05,
     heartbeatSeconds: 1, timeoutSeconds: 8, handshakeSeconds: 8, maxMessageLength: 65536 });
 export type LanSide = 'blue' | 'red';
 export interface TeamSelection { readonly formationId: FormationId; readonly templateIds: readonly string[] }
 export interface RoomStatus {
+    readonly kind?: 'Remote'; readonly code?: string;
     readonly roomId: string; readonly round: number; readonly connected: boolean;
     readonly stage: 'Selecting' | 'Playing' | 'Finished';
     readonly blueReady: boolean; readonly redReady: boolean;
@@ -26,7 +27,7 @@ export type SimulationStatus = { readonly reason: 'ready' | 'moving' | 'stopped'
     | 'kickoff-violation' | 'turn-timeout' | 'skill-bonus' | 'finished';
     readonly seconds: number; readonly droppedSeconds: number };
 export type ServerMessage =
-    | { readonly type: 'Welcome'; readonly signature: string; readonly conditions: ConditionSession;
+    | { readonly type: 'Welcome'; readonly signature: string; readonly conditions: ConditionSession; readonly side: LanSide;
         readonly room: RoomStatus }
     | { readonly type: 'Lobby'; readonly room: RoomStatus }
     | { readonly type: 'Snapshot'; readonly round: number; readonly state: GameState;

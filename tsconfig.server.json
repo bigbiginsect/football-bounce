@@ -1,0 +1,4 @@
+{
+  "extends": "./tsconfig.core.json",
+  "compilerOptions": { "outDir": ".server-output" }
+}

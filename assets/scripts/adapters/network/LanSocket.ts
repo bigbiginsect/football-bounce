@@ -76,7 +76,31 @@ export function lanAddress(input: string): string {
 }
 export interface LanConnectAttempt { readonly result: Promise<LanPeer>; cancel(): void }
 export function connectLan(input: string): LanConnectAttempt {
-    const socket = new WebSocket(lanAddress(input));
+    return connectSocket(lanAddress(input), '无法连接房主，请检查热点、地址和游戏版本');
+}
+/** 远程允许域名、IPv6、穿透路径；禁止凭据/查询参数混入URL。 */
+export function remoteAddress(input: string): string {
+    const value = input.trim();
+    const parts = /^(wss?):\/\/(\[[0-9a-f:.]+\]|[a-z0-9.-]+)(?::(\d{1,5}))?(\/[^\s?#]*)?$/i.exec(value);
+    if (value.length > 300 || !parts) throw new Error('请输入完整 ws:// 或 wss:// 地址，不要包含账号、口令或查询参数');
+    const host = parts[2];
+    if (host[0] === '[') {
+        const ip = host.slice(1, -1); const halves = ip.split('::');
+        const groups = halves.map(half => half ? half.split(':') : []);
+        if (halves.length > 2 || groups.some(group => group.some(x => !/^[0-9a-f]{1,4}$/i.test(x)))
+            || (halves.length === 2 ? groups[0].length + groups[1].length >= 8 : groups[0].length !== 8))
+            throw new Error('IPv6服务器地址无效');
+    } else if (host.length > 253 || host.split('.').some(label => !/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/i.test(label))
+        || (/^[0-9.]+$/.test(host) && (host.split('.').length !== 4 || host.split('.').some(x => Number(x) > 255))))
+        throw new Error('服务器域名或IP无效');
+    if (parts[3] && (Number(parts[3]) < 1 || Number(parts[3]) > 65535)) throw new Error('服务器端口无效');
+    return `${parts[1].toLowerCase()}://${host}${parts[3] ? `:${Number(parts[3])}` : ''}${parts[4] ?? '/football'}`;
+}
+export function connectRemote(input: string): LanConnectAttempt {
+    return connectSocket(remoteAddress(input), '无法连接服务器，请检查地址、服务运行状态和公网入口');
+}
+function connectSocket(address: string, failureMessage: string): LanConnectAttempt {
+    const socket = new WebSocket(address);
     let settled = false;
     let rejectPending: (error: Error) => void = () => {};
     let timer: ReturnType<typeof setTimeout>;
@@ -84,7 +108,7 @@ export function connectLan(input: string): LanConnectAttempt {
         rejectPending = reject;
         const fail = (): void => {
             if (settled) return;
-            settled = true; clearTimeout(timer); socket.close(); reject(new Error('无法连接房主，请检查热点、地址和游戏版本'));
+            settled = true; clearTimeout(timer); socket.close(); reject(new Error(failureMessage));
         };
         timer = setTimeout(fail, lanSettings.handshakeSeconds * 1000);
         socket.onerror = fail; socket.onclose = fail;

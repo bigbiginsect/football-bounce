@@ -1,0 +1,10 @@
+{
+  "name": "football-bounce-server",
+  "version": "0.1.0",
+  "private": true,
+  "description": "足球弹弹乐电脑权威服务端",
+  "engines": { "node": ">=22" },
+  "scripts": { "start": "node start.cjs", "check": "node start.cjs --check", "smoke": "node start.cjs --smoke-test" },
+  "dependencies": { "@cocos/box2d": "1.0.2", "ws": "8.22.2" },
+  "devDependencies": { "typescript": "5.9.3" }
+}

@@ -86,7 +86,7 @@ export class LineupView {
         const sideName = snapshot.side === 'blue' ? '蓝队' : '红队';
         this.title.string = sideName + ' · 选择首发';
         this.title.color = snapshot.side === 'blue' ? new Color(111, 201, 255) : new Color(255, 133, 134);
-        this.subtitle.string = snapshot.singleSide ? '附近联机 · 仅设置自己的 5 个位置' : snapshot.side === 'blue' ? '第 1 步 / 2 · 布置蓝队的 5 个位置'
+        this.subtitle.string = snapshot.singleSide ? '联机选人 · 仅设置自己的 5 个位置' : snapshot.side === 'blue' ? '第 1 步 / 2 · 布置蓝队的 5 个位置'
             : '第 2 步 / 2 · 布置红队的 5 个位置';
         this.confirmLabel.string = snapshot.singleSide ? '确认阵容 · 准备比赛' : snapshot.side === 'blue' ? '确认蓝队 →' : '确认红队 · 开始比赛';
         this.backButton.active = !snapshot.singleSide && snapshot.side === 'red';

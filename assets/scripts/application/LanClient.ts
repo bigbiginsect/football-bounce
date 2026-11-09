@@ -5,6 +5,9 @@ import type { PrototypeConfig } from '../core/PrototypeConfig';
 import { cloneLan, decodeLan, lanSettings, lanSignature, validConditions, validRoom, validSnapshot, validStatus } from '../core/LanProtocol';
 import type { RoomStatus, SimulationStatus, ClientMessage, TeamSelection } from '../core/LanProtocol';
 import type { LanPeer } from './LanTransport';
+import type { RemoteHello, RemoteRequest } from '../core/RemoteProtocol';
+import { validRemoteRoom } from '../core/RemoteProtocol';
+import type { LanSide } from '../core/LanProtocol';
 
 export interface LanClientHooks {
     welcomed(conditions: ConditionSession): void;
@@ -26,18 +29,23 @@ export class LanClient {
     private pendingSeconds = 0;
     private conditions?: ConditionSession;
     private started = false;
+    private assignedSide: LanSide = 'red';
     private readonly signature: string;
     constructor(private readonly peer: LanPeer, private readonly config: PrototypeConfig,
-        private readonly catalog: PlayerCatalog, private readonly hooks: LanClientHooks) {
+        private readonly catalog: PlayerCatalog, private readonly hooks: LanClientHooks,
+        private readonly remote?: RemoteRequest) {
         this.signature = lanSignature(config, catalog);
         peer.onMessage = data => this.receive(data);
-        peer.onClose = () => this.close('房主已断开，本场已中止');
+        peer.onClose = () => this.close(this.remote ? '服务器连接已断开，本场已中止' : '房主已断开，本场已中止');
     }
     /** 组合层先保存实例再启动，发送失败的同步回调也能正确清理实例。 */
     start(): void {
         if (this.started || this.closed) return;
-        this.started = true; this.send({ type: 'Hello', signature: this.signature });
+        this.started = true;
+        this.send(this.remote ? { type: 'RemoteHello', signature: this.signature, ...this.remote }
+            : { type: 'Hello', signature: this.signature });
     }
+    get side(): LanSide { return this.assignedSide; }
     getRoom(): RoomStatus | undefined { return this.room && cloneLan(this.room); }
     private receive(data: unknown): void {
         if (this.closed) return;
@@ -47,9 +55,12 @@ export class LanClient {
         if (v.type === 'Ended' && typeof v.reason === 'string') { this.close(v.reason.slice(0, 160)); return; }
         if (!this.room) {
             if (v.type !== 'Welcome' || v.signature !== this.signature || !validRoom(v.room)
-                || v.room.stage !== 'Selecting' || !validConditions(v.conditions, this.catalog)) {
+                || v.room.stage !== 'Selecting' || !validConditions(v.conditions, this.catalog)
+                || (v.side !== 'blue' && v.side !== 'red')
+                || (this.remote ? !validRemoteRoom(v.room) : v.side !== 'red' || v.room.kind !== undefined)) {
                 this.close('房间握手失败，请确认游戏版本一致'); return;
             }
+            this.assignedSide = v.side;
             this.conditions = cloneLan(v.conditions); this.room = cloneLan(v.room);
             this.hooks.welcomed(cloneLan(v.conditions)); this.hooks.roomChanged(cloneLan(v.room)); return;
         }
@@ -59,6 +70,7 @@ export class LanClient {
             this.hooks.rejected(v.reason.slice(0, 160)); return;
         }
         if (v.type === 'Lobby' && validRoom(v.room) && v.room.roomId === this.room.roomId) {
+            if (v.room.kind !== this.room.kind || v.room.code !== this.room.code) { this.close('房间身份异常'); return; }
             if (v.room.round < this.room.round) return;
             if (v.room.round > this.room.round) {
                 if (this.room.stage !== 'Finished' || v.room.stage !== 'Selecting') {
@@ -107,7 +119,7 @@ export class LanClient {
             this.heartbeat = 0; this.send({ type: 'Ping' });
         }
     }
-    private send(message: ClientMessage): void {
+    private send(message: ClientMessage | RemoteHello): void {
         if (this.closed) return;
         try { this.peer.send(JSON.stringify(message)); } catch { this.close('连接发送失败，本场已中止'); }
     }

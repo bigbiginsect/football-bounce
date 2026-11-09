@@ -8,7 +8,8 @@ import type { LanSide, RoomStatus, SimulationStatus, TeamSelection } from '../co
 import { LanHost } from '../application/LanHost';
 import { LanClient } from '../application/LanClient';
 import type { LocalMatch, CommandResult } from '../application/LocalMatch';
-import { connectLan, LanConnectAttempt, LanSocketServer } from '../adapters/network/LanSocket';
+import { connectLan, connectRemote, LanConnectAttempt, LanSocketServer } from '../adapters/network/LanSocket';
+import { isRoomCode, RemoteRequest } from '../core/RemoteProtocol';
 import { LanMenuView } from './LanMenuView';
 
 interface LanControllerHooks {
@@ -35,7 +36,7 @@ export class LanController {
     private closing = false;
     private disposed = false;
     get isNetwork(): boolean { return Boolean(this.host || this.client || this.attempt || this.server); }
-    get side(): LanSide | undefined { return this.host ? 'blue' : this.client ? 'red' : undefined; }
+    get side(): LanSide | undefined { return this.host ? 'blue' : this.client?.side; }
 
     constructor(private readonly parent: Node, private readonly config: PrototypeConfig,
         private readonly catalog: PlayerCatalog, private readonly localConditions: ConditionSession,
@@ -46,7 +47,22 @@ export class LanController {
         this.menu = new LanMenuView(this.parent, {
             local: () => { this.menu?.dispose(); this.menu = undefined; this.hooks.local(); },
             host: () => { void this.createRoom(); }, join: address => { void this.joinRoom(address); },
+            remote: () => this.openRemote(),
         }, message);
+    }
+    private openRemote(): void {
+        if (this.isNetwork) return;
+        this.menu?.dispose(); this.menu = new LanMenuView(this.parent);
+        this.menu.showRemote({
+            create: (address, key) => this.requestRemote(address, key, 'Create', ''),
+            join: (address, key, code) => this.requestRemote(address, key, 'Join', code.toUpperCase().trim()),
+            back: () => this.openMenu(),
+        });
+    }
+    private requestRemote(address: string, key: string, action: 'Create' | 'Join', code: string): void {
+        if (!/^[\x21-\x7e]{12,128}$/.test(key)) { this.menu?.setMessage('请输入电脑显示的12—128位连接口令'); return; }
+        if (action === 'Join' && !isRoomCode(code)) { this.menu?.setMessage('请输入6位字母数字房间码'); return; }
+        void this.joinRoom(address, { action, accessKey: key, roomCode: code });
     }
     private async createRoom(): Promise<void> {
         if (this.isNetwork) return;
@@ -66,12 +82,13 @@ export class LanController {
             if (!this.disposed && token === this.generation) this.openMenu(String(error instanceof Error ? error.message : error));
         }
     }
-    private async joinRoom(address: string): Promise<void> {
+    private async joinRoom(address: string, remote?: RemoteRequest): Promise<void> {
         if (this.isNetwork) return;
         const token = ++this.generation;
         try {
-            this.menu?.setBusy('正在连接房主…');
-            this.attempt = connectLan(address);
+            if (remote?.action === 'Join' && !isRoomCode(remote.roomCode)) throw new Error('请输入6位字母数字房间码');
+            this.menu?.setBusy(remote ? '正在连接电脑服务…' : '正在连接房主…');
+            this.attempt = remote ? connectRemote(address) : connectLan(address);
             const peer = await this.attempt.result;
             if (this.disposed || token !== this.generation) { peer.close(); return; }
             this.attempt = undefined;
@@ -79,7 +96,7 @@ export class LanController {
                 welcomed: conditions => { this.roomConditions = conditions; },
                 roomChanged: room => this.roomChanged(room), snapshot: (state, status, angle) => this.hooks.snapshot(state, status, angle),
                 rejected: reason => this.hooks.rejected(reason), ended: reason => this.end(reason),
-            });
+            }, remote);
             this.client.start();
         } catch (error) {
             if (!this.disposed && token === this.generation) this.openMenu(error instanceof Error ? error.message : String(error));

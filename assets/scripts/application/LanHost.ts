@@ -57,7 +57,7 @@ export class LanHost {
                 this.dropPending(); return;
             }
             this.welcomed = true; this.idle = 0;
-            this.send({ type: 'Welcome', signature: this.signature, conditions: this.conditions, room: this.getRoom() });
+            this.send({ type: 'Welcome', signature: this.signature, conditions: this.conditions, side: 'red', room: this.getRoom() });
             this.notifyRoom(); return;
         }
         this.idle = 0;

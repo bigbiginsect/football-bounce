@@ -30,3 +30,5 @@ node_modules/
 *.keystore
 *.jks
 .test-output/
+.server-output/
+server/node_modules/
